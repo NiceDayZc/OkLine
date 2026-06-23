@@ -4,6 +4,19 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-06-23
+
+### Added
+- **A full-featured interactive TUI.** Running `okline` (no args) now opens a
+  **categorised** menu — 8 sections, ~40 actions — covering essentially every
+  capability: account/profile/settings/logout, contacts (list/search/find/add/
+  block/favorites/export), groups (list/members/leave/accept/boxes), sending
+  (text/sticker/location/media/reply/react/unsend/broadcast), reading
+  (chat log with E2EE decrypt / raw / search / backup), live bots
+  (watch/auto-reply/notify), E2EE (status/send/decrypt/round-trip), and a
+  developer section (call any endpoint, list endpoints, self-test, recording).
+  Sub-menu navigation with Back/Quit; same soft palette.
+
 ## [2.6.0] - 2026-06-23
 
 A code-quality / architecture pass. No behaviour or wire changes — the public API,
