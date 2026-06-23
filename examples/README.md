@@ -2,17 +2,23 @@
 
 A collection of small, runnable command-line tools built on `okline`.
 
-## Just run them — they log in for you
+## Log in once — then everything just works
 
-On first run, each tool shows a **QR code**: scan it with the LINE app
-(*Settings → Add friends → QR code*), confirm the PIN, and the session is saved to
-`tokens.json`. Every later run reuses it instantly (and restores your E2EE keys).
-No separate setup step.
+Run [`login.py`](login.py): it shows a **QR code**, you scan it with the LINE app
+(*Settings → Add friends → QR code*) and confirm the PIN, and the session (incl.
+your E2EE keys) is saved to `tokens.json`.
 
 ```bash
-python examples/whoami.py            # first run: scan the QR; then it just works
-python examples/stats.py             # reuses the saved session
-python examples/whoami.py --login    # force a fresh QR login
+python examples/login.py             # scan the QR once
+python examples/whoami.py            # all the other tools reuse the session
+```
+
+You don't even have to run `login.py` first — **every tool logs you in on its own**
+the first time there's no saved session. Force a fresh login anytime with `--login`.
+
+```bash
+python examples/stats.py             # first run prompts the QR too; then instant
+python examples/whoami.py --login    # force a new QR login
 ```
 
 Auth options (all tools accept them): `--tokens-file PATH` (default `tokens.json`),
@@ -23,6 +29,7 @@ Auth options (all tools accept them): `--tokens-file PATH` (default `tokens.json
 ### Account & people
 | Tool | What it does |
 |------|--------------|
+| [`login.py`](login.py) | scan a QR to log in and save the session (run once) |
 | [`whoami.py`](whoami.py) | your profile + a few account stats |
 | [`stats.py`](stats.py) | richer dashboard (contacts, groups, blocked, favorites, E2EE) |
 | [`profile.py`](profile.py) | show a user's profile/buddy detail by mid |

@@ -25,14 +25,28 @@ def add_auth_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def _qr_login_and_save(path: str) -> OkLine:
-    """Interactive QR login (scan with the LINE app), then save the session."""
-    from okline.qrterm import print_qr
+def render_qr(url: str) -> None:
+    """Draw the login QR in the terminal, falling back to the raw URL."""
+    try:
+        from okline.qrterm import print_qr
+        print_qr(url)
+    except ModuleNotFoundError:
+        print(url)
+        print("\n(install 'qrcode' for an inline QR:  pip install qrcode  — or paste\n"
+              " the URL above into any QR generator and scan that with the LINE app)")
+
+
+def interactive_login(path: str = "tokens.json") -> OkLine:
+    """Scan a QR with the LINE app to log in, then save the session to ``path``.
+
+    The saved file includes your E2EE keys, so later runs (and the other example
+    tools) reuse this session automatically — no re-scan.
+    """
     api = OkLine()
-    print("No saved session yet — scan this QR with the LINE app "
+    print("Scan this QR with the LINE app "
           "(Settings > Add friends > QR code):\n")
     api.qr_login(
-        on_qr=lambda url: print_qr(url),
+        on_qr=render_qr,
         on_pin=lambda pin: print(f"\n>>> Confirm this PIN in the app:  {pin}\n"),
     )
     api.save_tokens(path)
@@ -62,7 +76,8 @@ def load(args: argparse.Namespace) -> OkLine:
                     break
         if os.path.exists(path):
             return OkLine.from_tokens_file(path)
-    return _qr_login_and_save(path)
+    print("No saved session yet —")
+    return interactive_login(path)
 
 
 def contact_name(wrapper: dict) -> str:
