@@ -4,6 +4,24 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-06-23
+
+### Added
+- **Cross-session E2EE** — the unwrapped keychain is now exported
+  (`E2EEManager.export_keys`, via the WASM `e2eekey_export_key`) into the session
+  file by `save_tokens` and restored by `from_tokens_file`
+  (`load_from_export` / `e2eekey_load_key`). Letter Sealing now works from a saved
+  token **without a fresh QR login**.
+- **Group Letter Sealing** — decrypt group messages and send to groups that
+  already have a key. The group shared key is fetched
+  (`getLastE2EEGroupSharedKey` / `getE2EEGroupSharedKey`) and unwrapped via the new
+  `e2eechannel_unwrap_group_shared_key` bridge op. `encrypt()`/`decrypt()` route
+  group-vs-1:1 automatically. (Bootstrapping a brand-new group key —
+  `registerE2EEGroupKey` — is still future work.)
+
+Both live-verified (35/35 live checks pass, incl. group decrypt + cross-session
+reload + roundtrip).
+
 ## [2.3.0] - 2026-06-23
 
 ### Added
