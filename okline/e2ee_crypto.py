@@ -8,8 +8,8 @@ it, extracted verbatim from the extension bundle:
 * **chunks (V2)** = ``[b64(ct[0:16]), b64(ct[28:]), b64(ct[16:28]),
                        b64(keyId4BE_sender), b64(keyId4BE_receiver)]``  (``vL``)
 * **decrypt**    = reconstruct ``ct = c[0] + c[2] + c[1]``  (``hL``)
-* **message**    = ``{...msg, contentMetadata:{e2eeVersion:"2"}, chunks,
-                      text:None}``  (``EL``)
+* **message**    = ``{...msg, contentMetadata:{e2eeVersion:"2"}, chunks}`` with
+                      ``text``/``location``/``from`` removed  (``EL``)
 
 All of this is round-trip unit-tested; it is independent of the crypto.
 """
@@ -94,15 +94,22 @@ def parse_chunks(chunks: List[str]) -> Tuple[bytes, Optional[int], Optional[int]
 
 def build_e2ee_message(message: Dict[str, Any], chunks: List[str],
                        version: int = 2) -> Dict[str, Any]:
-    """``EL`` — turn a plain message + chunks into the sealed Message struct."""
+    """``EL`` — turn a plain message + chunks into the sealed Message struct.
+
+    The real ``EL`` sets ``text``/``location`` to ``undefined`` (so ``JSON.stringify``
+    *drops* the keys) and never carries a ``from`` field — the server populates it.
+    Sending ``"text": null`` / ``"from": …`` instead makes the gateway reject the
+    message (``UNKNOWN_ERROR`` 99999), so we delete those keys outright.
+    """
     meta = dict(message.get("contentMetadata") or {})
     meta["e2eeVersion"] = str(version)
     meta.pop("REPLACE", None)            # REPLACE is now inside the ciphertext
     out = dict(message)
     out["contentMetadata"] = meta
     out["chunks"] = chunks
-    out["text"] = None
-    out["location"] = None
+    out.pop("text", None)
+    out.pop("location", None)
+    out.pop("from", None)
     return out
 
 

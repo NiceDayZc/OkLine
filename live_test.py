@@ -61,15 +61,18 @@ class Runner:
         print(f"\n=== {title} ===")
 
     def check(self, name: str, fn: Callable[[], Any], *,
-              summary: Optional[Callable[[Any], str]] = None) -> Any:
+              summary: Optional[Callable[[Any], str]] = None,
+              ok: Optional[Callable[[Any], bool]] = None) -> Any:
         t = time.monotonic()
         try:
             value = fn()
             ms = (time.monotonic() - t) * 1000
             status = getattr(self.api.last, "status", 200)
             det = summary(value) if summary else _summ(value)
-            self.results.append(Result(name, True, status, ms, det))
-            print(f"  [OK ] {name:<46} {str(status):>3} {ms:6.0f}ms  {det}")
+            passed = ok(value) if ok else True
+            self.results.append(Result(name, passed, status, ms, det))
+            tag = "[OK ]" if passed else "[FAIL]"
+            print(f"  {tag} {name:<46} {str(status):>3} {ms:6.0f}ms  {det}")
             return value
         except Exception as exc:  # noqa: BLE001
             ms = (time.monotonic() - t) * 1000
@@ -208,6 +211,17 @@ def run(api: OkLine, *, to: Optional[str], image: Optional[str],
     r.section("E2EE / Letter Sealing")
     if api.e2ee.is_ready():
         print(f"  (E2EE keys loaded: {len(api.e2ee.my_keys)} key(s))")
+        # decisive crypto check: encrypt to a peer then decrypt back via the same
+        # (symmetric) send channel — proves encrypt + framing + decrypt all agree,
+        # independent of the server or the other party. Needs a real peer key, so
+        # use --to if given, else negotiate against ourselves is impossible; skip.
+        if to and to[:1].lower() == "u" and to != my_mid:
+            r.check("e2ee roundtrip (encrypt->decrypt)",
+                    lambda: api.e2ee.roundtrip(to, "OkLine roundtrip ✓"),
+                    summary=lambda t: f"recovered={t!r}",
+                    ok=lambda t: t == "OkLine roundtrip ✓")
+        else:
+            r.skip("e2ee roundtrip", "pass --to <a friend's uXX mid>")
         # you cannot message yourself, so E2EE send needs a real --to (a friend's
         # uXX DM). Group sealing uses a different key scheme (not wired).
         if to and to[:1].lower() == "u" and to != my_mid:

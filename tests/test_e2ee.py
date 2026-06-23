@@ -44,10 +44,13 @@ def test_plaintext_roundtrip():
 
 
 def test_build_e2ee_message():
-    msg = {"to": USER_MID, "text": "hi", "contentType": 0,
-           "contentMetadata": {"REPLACE": "x"}, "toType": 0}
+    msg = {"to": USER_MID, "text": "hi", "location": {"x": 1}, "from": "Ume",
+           "contentType": 0, "contentMetadata": {"REPLACE": "x"}, "toType": 0}
     sealed = fr.build_e2ee_message(msg, ["a", "b", "c", "d", "e"], 2)
-    assert sealed["text"] is None
+    # EL() drops text/location/from entirely (not text:null) — sending them 500s
+    assert "text" not in sealed
+    assert "location" not in sealed
+    assert "from" not in sealed
     assert sealed["chunks"] == ["a", "b", "c", "d", "e"]
     assert sealed["contentMetadata"]["e2eeVersion"] == "2"
     assert "REPLACE" not in sealed["contentMetadata"]      # moved into ciphertext

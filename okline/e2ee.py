@@ -132,9 +132,9 @@ class E2EEManager:
             plaintext_b64=base64.b64encode(plaintext).decode("ascii"))
         ciphertext = base64.b64decode(ct_b64)
         chunks = fr.build_chunks(ciphertext, my_kid, peer_kid)
-        sealed = fr.build_e2ee_message(message, chunks, 2)
-        sealed["from"] = frm
-        return sealed
+        # EL() drops text/location/from — the gateway 500s if `from`/`text:null`
+        # are present (the server populates `from` from the auth token).
+        return fr.build_e2ee_message(message, chunks, 2)
 
     def decrypt(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Decrypt a received sealed 1:1 message -> plain message dict."""
@@ -161,3 +161,21 @@ class E2EEManager:
         s = self._seq
         self._seq += 1
         return s
+
+    # -- self-test -----------------------------------------------------------
+    def roundtrip(self, to: str, text: str) -> str:
+        """Encrypt a message to ``to`` then decrypt it back with the *same* send
+        channel (the symmetric ECDH secret), proving encrypt+framing+decrypt are
+        mutually consistent without needing a second party.  Returns the recovered
+        text.  Raises on crypto/framing mismatch."""
+        msg = {"to": to, "toType": 0, "contentType": 0, "text": text,
+               "contentMetadata": {}}
+        sealed = self.encrypt(msg)
+        channel, my_kid, peer_kid = self._channel_for_send(to)
+        ct, sid, rid = fr.parse_chunks(sealed["chunks"])
+        pt_b64 = self._bridge.e2ee_decrypt_v2(
+            channel, to=to, frm=self.my_mid, sender_key_id=sid or my_kid,
+            receiver_key_id=rid or peer_kid, content_type=0,
+            ciphertext_b64=base64.b64encode(ct).decode("ascii"))
+        plain = fr.deserialize_plaintext(base64.b64decode(pt_b64))
+        return plain.get("text", "")
