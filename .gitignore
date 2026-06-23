@@ -40,3 +40,6 @@ okline_session.*
 *.har
 line_login_qr.png
 .env
+
+# OkLine live-test reports
+live_test_report.*
