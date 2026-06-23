@@ -7,6 +7,7 @@
 Note: media send is the V1 (non-E2EE) flow — works for chats that allow plain
 mode (most groups). Letter-Sealed DMs are not yet supported for media.
 """
+
 from __future__ import annotations
 
 import argparse

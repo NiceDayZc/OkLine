@@ -16,12 +16,11 @@ from __future__ import annotations
 import binascii
 
 import pytest
+from conftest import FakeBridge, FakeResp, build_api, route
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from okline.auth import AuthFlows, LoginResult, _append_secret
 from okline.exceptions import LineApiError, LineAuthError
-
-from conftest import FakeBridge, FakeResp, build_api, enveloped, route
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +77,11 @@ def test_email_login_builds_login_request_and_adopts_tokens(rsa_key, last_reques
     assert api.transport.tokens.certificate == "CERT-XYZ"
 
     # --- the LoginRequest body we actually transmitted --------------------
-    body = last_request(api)               # [ {LoginRequest...} ]
+    body = last_request(api)  # [ {LoginRequest...} ]
     assert isinstance(body, list) and len(body) == 1
     req = body[0]
-    assert req["type"] == 2                 # ID_CREDENTIAL_WITH_E2EE (default)
-    assert req["identityProvider"] == 1     # IdentityProvider.LINE
+    assert req["type"] == 2  # ID_CREDENTIAL_WITH_E2EE (default)
+    assert req["identityProvider"] == 1  # IdentityProvider.LINE
     assert req["identifier"] == info["keynm"]
     assert req["e2eeVersion"] == 1
     assert req["keepLoggedIn"] is True
@@ -90,22 +89,25 @@ def test_email_login_builds_login_request_and_adopts_tokens(rsa_key, last_reques
     # password must be lowercase hex...
     pw = req["password"]
     assert isinstance(pw, str)
-    int(pw, 16)                             # parses as hex -> no ValueError
+    int(pw, 16)  # parses as hex -> no ValueError
     assert pw == pw.lower()
 
     # ...and decrypt to chr(len)+sessionKey + chr(len)+email + chr(len)+pwd
     cleartext = _decrypt_password(priv, pw).decode("utf-8")
     expected = (
-        chr(len(info["sessionKey"])) + info["sessionKey"]
-        + chr(len("me@example.com")) + "me@example.com"
-        + chr(len("hunter2")) + "hunter2"
+        chr(len(info["sessionKey"]))
+        + info["sessionKey"]
+        + chr(len("me@example.com"))
+        + "me@example.com"
+        + chr(len("hunter2"))
+        + "hunter2"
     )
     assert cleartext == expected
 
 
 def test_email_login_without_e2ee_uses_plain_credential_type(rsa_key, last_request):
     """with_e2ee=False switches the LoginRequest type to ID_CREDENTIAL (0)."""
-    priv, info = rsa_key
+    _priv, info = rsa_key
     success = {"type": 1, "tokenV3IssueResult": {"accessToken": "A"}}
     responder = route({"getRSAKeyInfo": info, "loginV2": success})
     api = build_api(responder, access_token=None)
@@ -113,12 +115,12 @@ def test_email_login_without_e2ee_uses_plain_credential_type(rsa_key, last_reque
     api.auth.email_login("u@x.io", "pw", with_e2ee=False)
 
     req = last_request(api)[0]
-    assert req["type"] == 0                 # LoginType.ID_CREDENTIAL
+    assert req["type"] == 0  # LoginType.ID_CREDENTIAL
 
 
 def test_email_login_targets_the_right_endpoints(rsa_key):
     """email_login hits getRSAKeyInfo first, then loginV2 (last URL)."""
-    priv, info = rsa_key
+    _priv, info = rsa_key
     success = {"type": 1, "tokenV3IssueResult": {"accessToken": "A"}}
     responder = route({"getRSAKeyInfo": info, "loginV2": success})
     api = build_api(responder, access_token=None)
@@ -132,7 +134,7 @@ def test_email_login_targets_the_right_endpoints(rsa_key):
 
 def test_email_login_non_success_does_not_adopt_tokens(rsa_key):
     """A non-SUCCESS loginV2 (e.g. device confirm) leaves tokens untouched."""
-    priv, info = rsa_key
+    _priv, info = rsa_key
     # REQUIRE_DEVICE_CONFIRM (3): has a pinCode, no tokens to adopt.
     challenge = {"type": 3, "pinCode": "1234"}
     responder = route({"getRSAKeyInfo": info, "loginV2": challenge})
@@ -156,25 +158,30 @@ def _qr_responder(*, verify_status=400):
     ``verifyCertificate`` is forced to ``400 NOT_CERTIFICATED`` so the flow
     falls through to the PIN sub-flow (first-login path).
     """
-    verify = FakeResp(verify_status, {"error": {"code": 43,
-                                                 "message": "NOT_CERTIFICATED"}})
-    return route({
-        "createSession": {"authSessionId": "SESSION-1"},
-        "createQrCode": {"callbackUrl": "https://line.me/R/au?t=abc",
-                         "longPollingIntervalSec": 1,
-                         "longPollingMaxCount": 2},
-        "checkQrCodeVerified": {"ok": True},
-        "verifyCertificate": verify,
-        "createPinCode": {"pinCode": "778899"},
-        "checkPinCodeVerified": {"ok": True},
-        "qrCodeLoginV2": {
-            "type": 1,
-            "certificate": "QR-CERT",
-            "tokenV3IssueResult": {"accessToken": "QR-ACCESS",
-                                   "refreshToken": "QR-REFRESH"},
-            "mid": "u" + "9" * 32,
-        },
-    })
+    verify = FakeResp(verify_status, {"error": {"code": 43, "message": "NOT_CERTIFICATED"}})
+    return route(
+        {
+            "createSession": {"authSessionId": "SESSION-1"},
+            "createQrCode": {
+                "callbackUrl": "https://line.me/R/au?t=abc",
+                "longPollingIntervalSec": 1,
+                "longPollingMaxCount": 2,
+            },
+            "checkQrCodeVerified": {"ok": True},
+            "verifyCertificate": verify,
+            "createPinCode": {"pinCode": "778899"},
+            "checkPinCodeVerified": {"ok": True},
+            "qrCodeLoginV2": {
+                "type": 1,
+                "certificate": "QR-CERT",
+                "tokenV3IssueResult": {
+                    "accessToken": "QR-ACCESS",
+                    "refreshToken": "QR-REFRESH",
+                },
+                "mid": "u" + "9" * 32,
+            },
+        }
+    )
 
 
 def test_qr_login_full_flow(last_request):
@@ -182,11 +189,11 @@ def test_qr_login_full_flow(last_request):
     api = build_api(_qr_responder(), access_token=None, bridge=FakeBridge())
 
     seen = {}
-    qr_login_kw = dict(
-        on_qr=lambda url: seen.setdefault("qr", url),
-        on_pin=lambda pin: seen.setdefault("pin", pin),
-        wait_seconds=0.01,   # keep the long-poll budget tiny
-    )
+    qr_login_kw = {
+        "on_qr": lambda url: seen.setdefault("qr", url),
+        "on_pin": lambda pin: seen.setdefault("pin", pin),
+        "wait_seconds": 0.01,  # keep the long-poll budget tiny
+    }
     result = api.auth.qr_login(**qr_login_kw)
 
     # --- on_qr received a URL carrying the e2ee secret --------------------
@@ -212,8 +219,7 @@ def test_qr_login_visits_pin_endpoints_when_not_certificated():
     """When verifyCertificate fails, the PIN endpoints are exercised."""
     api = build_api(_qr_responder(), access_token=None, bridge=FakeBridge())
 
-    api.auth.qr_login(on_qr=lambda u: None, on_pin=lambda p: None,
-                      wait_seconds=0.01)
+    api.auth.qr_login(on_qr=lambda u: None, on_pin=lambda p: None, wait_seconds=0.01)
 
     urls = "\n".join(c["url"] for c in api.transport.session.calls)
     assert "createPinCode" in urls
@@ -227,12 +233,14 @@ def test_qr_login_skips_pin_when_certificate_verifies():
     api = build_api(responder, access_token=None, bridge=FakeBridge())
 
     pins = []
-    result = api.auth.qr_login(on_qr=lambda u: None,
-                               on_pin=lambda p: pins.append(p),
-                               certificate="EXISTING-CERT",
-                               wait_seconds=0.01)
+    result = api.auth.qr_login(
+        on_qr=lambda u: None,
+        on_pin=lambda p: pins.append(p),
+        certificate="EXISTING-CERT",
+        wait_seconds=0.01,
+    )
 
-    assert pins == []                       # on_pin never fired
+    assert pins == []  # on_pin never fired
     urls = "\n".join(c["url"] for c in api.transport.session.calls)
     assert "createPinCode" not in urls
     assert result.access_token == "QR-ACCESS"
@@ -244,16 +252,18 @@ def test_qr_login_uses_the_session_bridge_for_curve_keys():
     api = build_api(_qr_responder(), access_token=None, bridge=bridge)
 
     captured = {}
-    api.auth.qr_login(on_qr=lambda u: captured.setdefault("u", u),
-                      on_pin=lambda p: None, wait_seconds=0.01)
+    api.auth.qr_login(
+        on_qr=lambda u: captured.setdefault("u", u), on_pin=lambda p: None, wait_seconds=0.01
+    )
 
     # FakeBridge.e2ee_public_key(1) -> b64 of bytes([1]) * 32. The QR URL
     # carries it as a (URL-encoded) ``secret`` query parameter.
     import base64
     from urllib.parse import parse_qs, urlsplit
+
     expected_secret = base64.b64encode(bytes([1]) * 32).decode("ascii")
     query = parse_qs(urlsplit(captured["u"]).query)
-    assert query.get("secret") == [expected_secret]   # parse_qs URL-decodes it
+    assert query.get("secret") == [expected_secret]  # parse_qs URL-decodes it
     assert query.get("e2eeVersion") == ["1"]
 
 
@@ -265,9 +275,10 @@ def test_append_secret_adds_secret_and_e2ee_version():
     out = _append_secret("https://line.me/R/au?foo=bar", "PUB+KEY/b64==")
 
     from urllib.parse import parse_qs, urlsplit
+
     parts = urlsplit(out)
     q = parse_qs(parts.query)
-    assert q["foo"] == ["bar"]              # original preserved
+    assert q["foo"] == ["bar"]  # original preserved
     assert q["secret"] == ["PUB+KEY/b64=="]
     assert q["e2eeVersion"] == ["1"]
     assert parts.scheme == "https"
@@ -285,10 +296,10 @@ def test_append_secret_on_url_without_query():
 
 def test_append_secret_overwrites_existing_secret():
     """A pre-existing secret/e2eeVersion is replaced, not duplicated."""
-    out = _append_secret(
-        "https://line.me/R/au?secret=OLD&e2eeVersion=9", "NEW")
+    out = _append_secret("https://line.me/R/au?secret=OLD&e2eeVersion=9", "NEW")
 
     from urllib.parse import parse_qs, urlsplit
+
     q = parse_qs(urlsplit(out).query)
     assert q["secret"] == ["NEW"]
     assert q["e2eeVersion"] == ["1"]
@@ -347,8 +358,7 @@ def test_login_result_parse_non_success_type():
 # ===========================================================================
 def test_refresh_access_token_updates_tokens(last_request):
     """refresh_access_token swaps in the new access (and refresh) token."""
-    data = {"tokenV3IssueResult": {"accessToken": "FRESH-AT",
-                                    "refreshToken": "FRESH-RT"}}
+    data = {"tokenV3IssueResult": {"accessToken": "FRESH-AT", "refreshToken": "FRESH-RT"}}
     responder = route({"tokenRefresh": data})
     api = build_api(responder, access_token="STALE")
     api.transport.tokens.refresh_token = "OLD-RT"
@@ -367,7 +377,7 @@ def test_refresh_access_token_updates_tokens(last_request):
 
 def test_refresh_access_token_accepts_explicit_token():
     """An explicit refresh token overrides the stored one."""
-    data = {"accessToken": "FROM-EXPLICIT"}   # flat shape, no tokenV3IssueResult
+    data = {"accessToken": "FROM-EXPLICIT"}  # flat shape, no tokenV3IssueResult
     responder = route({"tokenRefresh": data})
     api = build_api(responder, access_token=None)
 
@@ -410,7 +420,7 @@ def test_poll_retries_on_410_then_succeeds():
         return "DONE"
 
     assert flows._poll(flaky, max_count=5) == "DONE"
-    assert calls["n"] == 3                  # two 410s, then success
+    assert calls["n"] == 3  # two 410s, then success
 
 
 def test_poll_gives_up_after_max_count_and_reraises():
@@ -438,4 +448,4 @@ def test_poll_propagates_non_retryable_errors_immediately():
     with pytest.raises(LineApiError) as ei:
         flows._poll(boom, max_count=5)
     assert ei.value.status == 403
-    assert calls["n"] == 1                  # raised on first attempt, no retry
+    assert calls["n"] == 1  # raised on first attempt, no retry

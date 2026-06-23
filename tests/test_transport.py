@@ -22,24 +22,22 @@ from __future__ import annotations
 import json
 
 import pytest
+from conftest import FakeResp, FakeSession, build_api, enveloped, route
 
-from okline.transport import (
-    DEFAULT_APPLICATION_HEADER,
-    DEFAULT_USER_AGENT,
-    LineConfig,
-    Tokens,
-    Transport,
-    _LAL_MAP,
-)
 from okline.exceptions import (
     LineApiError,
     LineAuthError,
     LineLoginRequired,
     LineMustUpgradeError,
 )
-
-from conftest import FakeResp, FakeSession, build_api, enveloped, route
-
+from okline.transport import (
+    _LAL_MAP,
+    DEFAULT_APPLICATION_HEADER,
+    DEFAULT_USER_AGENT,
+    LineConfig,
+    Tokens,
+    Transport,
+)
 
 # A real Thrift endpoint key used throughout for ``call``-based tests.
 PROFILE = "Talk.TalkService.getProfile"
@@ -53,8 +51,7 @@ def make_transport(responder=None, *, access_token="TKN", **cfg_kw) -> Transport
     """A bare :class:`Transport` wired to a fake session (no OkLine wrapper)."""
     responder = responder or (lambda m, u, kw: enveloped({}))
     cfg = LineConfig(**cfg_kw)
-    return Transport(cfg, Tokens(access_token=access_token),
-                     session=FakeSession(responder))
+    return Transport(cfg, Tokens(access_token=access_token), session=FakeSession(responder))
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +82,8 @@ class TestBaseHeaders:
     def test_unknown_locale_falls_back_to_en_us(self):
         t = make_transport(locale="xx-YY")
         h = t.base_headers()
-        assert h["Accept-Language"] == "xx-YY"        # echoed verbatim
-        assert h["X-LAL"] == "en_US"                   # but X-LAL falls back
+        assert h["Accept-Language"] == "xx-YY"  # echoed verbatim
+        assert h["X-LAL"] == "en_US"  # but X-LAL falls back
 
     def test_lal_map_is_consistent_for_every_known_locale(self):
         for locale, lal in _LAL_MAP.items():
@@ -199,8 +196,11 @@ class TestErrorMapping:
 
     def test_non_ok_envelope_raises_api_error_despite_200(self):
         """A non-OK message at HTTP 200 is still an application error."""
-        body = {"message": "FAILED", "data": None,
-                "error": {"code": 20, "message": "bad request"}}
+        body = {
+            "message": "FAILED",
+            "data": None,
+            "error": {"code": 20, "message": "bad request"},
+        }
         t = make_transport(lambda m, u, kw: FakeResp(200, body))
         with pytest.raises(LineApiError) as ei:
             t.call(PROFILE, [0])
@@ -241,7 +241,9 @@ class TestErrorMapping:
     def test_generic_http_error_raises_plain_api_error(self):
         """A non-auth, non-upgrade error is a plain LineApiError (not a subclass)."""
         body = {"error": {"code": 42, "message": "boom"}}
-        t = make_transport(lambda m, u, kw: FakeResp(500, body, headers={"content-type": "application/json"}))
+        t = make_transport(
+            lambda m, u, kw: FakeResp(500, body, headers={"content-type": "application/json"})
+        )
         # 500 retries (max_retries default 2) then surfaces the final 500 body.
         with pytest.raises(LineApiError) as ei:
             t.call(PROFILE, [0])
@@ -251,11 +253,13 @@ class TestErrorMapping:
 
     def test_error_code_from_response_header(self):
         """When the body has no code, ``x-line-resp-code`` supplies it."""
-        resp = FakeResp(400, {"message": "fail"},
-                        headers={"content-type": "application/json",
-                                 "x-line-resp-code": "8"})
+        resp = FakeResp(
+            400,
+            {"message": "fail"},
+            headers={"content-type": "application/json", "x-line-resp-code": "8"},
+        )
         t = make_transport(lambda m, u, kw: resp)
-        with pytest.raises(LineAuthError) as ei:   # code 8 -> auth
+        with pytest.raises(LineAuthError) as ei:  # code 8 -> auth
             t.call(PROFILE, [0])
         assert ei.value.code == 8
 
@@ -369,7 +373,7 @@ class TestRecording:
         api.call(PROFILE, 0)
         seqs = [ex.seq for ex in api.history]
         assert seqs == sorted(seqs)
-        assert len(set(seqs)) == len(seqs)        # all distinct
+        assert len(set(seqs)) == len(seqs)  # all distinct
 
     def test_secrets_redacted_in_recorded_request_headers(self, make_api):
         """The access token must be masked in the recorded transcript by default."""
@@ -401,8 +405,9 @@ class TestLoginRequired:
 
     def test_no_token_allowed_when_require_auth_false(self):
         """Unauthenticated endpoints (require_auth=False) still go out."""
-        t = make_transport(access_token=None,
-                           )
+        t = make_transport(
+            access_token=None,
+        )
         t.post_json("/api/foo", [1], require_auth=False)
         assert t.session.last is not None
         # no access header attached when unauthenticated

@@ -14,11 +14,11 @@ import json
 
 import pytest
 
-from okline.enums import ContentType, MessageRelationType, MIDType
-from okline.models import Message, mid_to_type, now_ms
-
 # Reuse the canonical sample mids from conftest for readable assertions.
 from conftest import GROUP_MID, ROOM_MID, USER_MID, USER_MID2
+
+from okline.enums import ContentType, MessageRelationType, MIDType
+from okline.models import Message, mid_to_type, now_ms
 
 SQUARE_CHAT_MID = "s" + "3" * 32
 
@@ -54,10 +54,15 @@ class TestMidToType:
         """Anything that is not c/r/s defaults to USER."""
         assert mid_to_type(mid) == int(MIDType.USER)
 
-    @pytest.mark.parametrize("mid,expected", [
-        ("Cabc", MIDType.GROUP), ("cabc", MIDType.GROUP),
-        ("Rabc", MIDType.ROOM), ("Sabc", MIDType.SQUARE_CHAT),
-    ])
+    @pytest.mark.parametrize(
+        "mid,expected",
+        [
+            ("Cabc", MIDType.GROUP),
+            ("cabc", MIDType.GROUP),
+            ("Rabc", MIDType.ROOM),
+            ("Sabc", MIDType.SQUARE_CHAT),
+        ],
+    )
     def test_prefix_is_case_insensitive(self, mid, expected):
         """Modern mids are upper-case (U/C/R/S) — match either case."""
         assert mid_to_type(mid) == int(expected)
@@ -162,7 +167,8 @@ class TestReply:
     def test_forward_relation_type(self):
         """Arbitrary relation types (e.g. FORWARD) are honoured."""
         msg = Message.text(
-            GROUP_MID, "fwd",
+            GROUP_MID,
+            "fwd",
             related_message_id="9",
             message_relation_type=int(MessageRelationType.FORWARD),
         )
@@ -213,8 +219,11 @@ class TestLocation:
     def test_basic_location(self):
         """Lat/long and title/address populate the location dict."""
         msg = Message.location(
-            USER_MID, latitude=35.659, longitude=139.700,
-            title="Shibuya", address="Tokyo",
+            USER_MID,
+            latitude=35.659,
+            longitude=139.700,
+            title="Shibuya",
+            address="Tokyo",
         )
         assert msg["contentType"] == int(ContentType.LOCATION) == 15
         assert msg["text"] == ""
@@ -255,8 +264,7 @@ class TestContact:
 
     def test_basic_contact(self):
         """mid + displayName go into contentMetadata with CONTACT type."""
-        msg = Message.contact(USER_MID, contact_mid=USER_MID2,
-                              display_name="Friend")
+        msg = Message.contact(USER_MID, contact_mid=USER_MID2, display_name="Friend")
         assert msg["contentType"] == int(ContentType.CONTACT) == 13
         assert msg["text"] == ""
         assert msg["contentMetadata"] == {
@@ -305,8 +313,9 @@ class TestMediaRef:
 
     def test_basic_media_ref(self):
         """The supplied content type is used and metadata starts empty."""
-        msg = Message.media_ref(USER_MID, content_type=int(ContentType.IMAGE),
-                               object_id="obs-123")
+        msg = Message.media_ref(
+            USER_MID, content_type=int(ContentType.IMAGE), object_id="obs-123"
+        )
         assert msg["contentType"] == int(ContentType.IMAGE) == 1
         assert msg["text"] == ""
         assert msg["contentMetadata"] == {}
@@ -314,8 +323,9 @@ class TestMediaRef:
     def test_media_ref_with_metadata(self):
         """Caller-supplied metadata is copied onto the message."""
         meta = {"FILE_NAME": "doc.pdf", "FILE_SIZE": "1024"}
-        msg = Message.media_ref(USER_MID, int(ContentType.FILE), "obs-9",
-                               content_metadata=meta)
+        msg = Message.media_ref(
+            USER_MID, int(ContentType.FILE), "obs-9", content_metadata=meta
+        )
         assert msg["contentType"] == int(ContentType.FILE) == 14
         assert msg["contentMetadata"] == meta
         assert msg["contentMetadata"] is not meta  # copied, not aliased
@@ -333,6 +343,7 @@ class TestMediaRef:
 def test_now_ms_is_millisecond_epoch():
     """``now_ms`` returns an int that looks like a millisecond timestamp."""
     import time
+
     before = int(time.time() * 1000)
     value = now_ms()
     after = int(time.time() * 1000)

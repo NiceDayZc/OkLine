@@ -17,7 +17,6 @@ import okline.__main__ as cli
 from okline import __version__
 from okline.endpoints import THRIFT_ENDPOINTS
 
-
 # A real endpoint key we know exists in the registry (see okline/endpoints.py).
 KNOWN_ENDPOINT = "Talk.TalkService.getProfile"
 
@@ -49,13 +48,15 @@ class FakeOkLine:
 
     def __init__(self, **kwargs):
         import types
+
         self.init_kwargs = kwargs
         self.transport = FakeTransport(self.result)
         self.last = None  # cmd_call only touches .last when --raw is given
         self.closed = False
         # commands that require auth check .tokens.access_token
         self.tokens = types.SimpleNamespace(
-            access_token=kwargs.get("access_token") or "TKN", mid=None)
+            access_token=kwargs.get("access_token") or "TKN", mid=None
+        )
         FakeOkLine.instances.append(self)
 
     def get_profile(self):
@@ -105,9 +106,7 @@ def test_parser_endpoints_with_grep():
 
 def test_parser_call_with_args_and_flags():
     """`call <endpoint> <argsJSON>` with flags maps to cmd_call defaults."""
-    args = cli.build_parser().parse_args(
-        ["call", KNOWN_ENDPOINT, "[2]", "--raw", "--no-auth"]
-    )
+    args = cli.build_parser().parse_args(["call", KNOWN_ENDPOINT, "[2]", "--raw", "--no-auth"])
     assert args.command == "call"
     assert args.func is cli.cmd_call
     assert args.endpoint == KNOWN_ENDPOINT
@@ -146,8 +145,16 @@ def test_parser_auth_flags_after_subcommand():
     """Shared --token/--refresh/--tokens-file/--show-secrets attach to each
     subcommand, so they may be given *after* the subcommand name."""
     args = cli.build_parser().parse_args(
-        ["profile", "--token", "TKN", "--refresh", "RFR",
-         "--tokens-file", "t.json", "--show-secrets"]
+        [
+            "profile",
+            "--token",
+            "TKN",
+            "--refresh",
+            "RFR",
+            "--tokens-file",
+            "t.json",
+            "--show-secrets",
+        ]
     )
     assert args.token == "TKN"
     assert args.refresh == "RFR"
@@ -237,7 +244,7 @@ def test_cmd_call_parses_array_and_prints_result(fake_okline, capsys):
 
     # The transport received the endpoint and the *parsed* args (a list).
     assert len(client.transport.calls) == 1
-    endpoint, args, kwargs = client.transport.calls[0]
+    endpoint, args, _kwargs = client.transport.calls[0]
     assert endpoint == KNOWN_ENDPOINT
     assert args == [2]
     assert isinstance(args, list)
@@ -251,7 +258,7 @@ def test_cmd_call_default_empty_args(fake_okline, capsys):
     code = run(["call", KNOWN_ENDPOINT])
     capsys.readouterr()
     assert code == 0
-    endpoint, args, kwargs = fake_okline.instances[0].transport.calls[0]
+    _endpoint, args, _kwargs = fake_okline.instances[0].transport.calls[0]
     assert args == []
 
 
@@ -323,6 +330,7 @@ def test_cmd_call_unknown_endpoint_returns_2(fake_okline, capsys):
 
 def test_cmd_call_transport_failure_returns_1(fake_okline, capsys):
     """If the transport raises, cmd_call surfaces it as exit code 1."""
+
     class Boom(FakeOkLine):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
@@ -334,6 +342,7 @@ def test_cmd_call_transport_failure_returns_1(fake_okline, capsys):
 
     fake_okline.instances = []
     import okline.__main__ as m
+
     # Swap in the raising subclass for this test only.
     orig = m.OkLine
     m.OkLine = Boom

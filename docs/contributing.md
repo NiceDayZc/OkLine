@@ -10,14 +10,32 @@ layout, how to add an endpoint, and the release flow.
 ```bash
 git clone https://github.com/NiceDayZc/okline
 cd OkLine
-pip install -e ".[test,qr]"     # editable install + pytest + qrcode
+make install                    # editable install + dev tools + pre-commit hooks
 # Node.js 18+ must be on PATH for X-Hmac (and the bridge tests)
 node --version
 ```
 
-`pip install -e .` installs OkLine in **editable** mode, so your source edits
-take effect immediately. The `[test,qr]` extras pull in `pytest` and the
-optional inline-QR dependency.
+`make install` runs `pip install -e ".[dev,qr]"` (editable install + `ruff`,
+`mypy`, `pytest`, `pre-commit`, `build`, `twine`) and installs the git hooks, so
+your edits take effect immediately and are checked on commit. Prefer plain pip?
+`pip install -e ".[dev,qr]" && pre-commit install`.
+
+## Quality gates
+
+The project is **lint-clean (ruff), type-clean (mypy) and auto-formatted**. The
+`Makefile` wraps every task — run `make help` to list them:
+
+```bash
+make lint        # ruff check --fix
+make format      # ruff format
+make typecheck   # mypy
+make test        # pytest
+make check       # all of the above, the way CI would (no auto-fix)
+```
+
+`pre-commit` runs ruff + ruff-format + mypy on changed files automatically; run
+`pre-commit run --all-files` to check everything at once. Tooling is configured
+in `pyproject.toml` (`[tool.ruff]`, `[tool.mypy]`).
 
 ## Running the tests
 

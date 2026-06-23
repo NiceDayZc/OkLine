@@ -17,11 +17,15 @@ from okline import OkLine
 
 
 def add_auth_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument("--tokens-file", default="tokens.json",
-                        help="session JSON (default tokens.json); created on first run")
+    parser.add_argument(
+        "--tokens-file",
+        default="tokens.json",
+        help="session JSON (default tokens.json); created on first run",
+    )
     parser.add_argument("--token", help="access token (overrides the file)")
-    parser.add_argument("--login", action="store_true",
-                        help="force a fresh QR login even if a session exists")
+    parser.add_argument(
+        "--login", action="store_true", help="force a fresh QR login even if a session exists"
+    )
     return parser
 
 
@@ -29,11 +33,14 @@ def render_qr(url: str) -> None:
     """Draw the login QR in the terminal, falling back to the raw URL."""
     try:
         from okline.qrterm import print_qr
+
         print_qr(url)
     except ModuleNotFoundError:
         print(url)
-        print("\n(install 'qrcode' for an inline QR:  pip install qrcode  — or paste\n"
-              " the URL above into any QR generator and scan that with the LINE app)")
+        print(
+            "\n(install 'qrcode' for an inline QR:  pip install qrcode  — or paste\n"
+            " the URL above into any QR generator and scan that with the LINE app)"
+        )
 
 
 def interactive_login(path: str = "tokens.json") -> OkLine:
@@ -43,8 +50,7 @@ def interactive_login(path: str = "tokens.json") -> OkLine:
     tools) reuse this session automatically — no re-scan.
     """
     api = OkLine()
-    print("Scan this QR with the LINE app "
-          "(Settings > Add friends > QR code):\n")
+    print("Scan this QR with the LINE app (Settings > Add friends > QR code):\n")
     api.qr_login(
         on_qr=render_qr,
         on_pin=lambda pin: print(f"\n>>> Confirm this PIN in the app:  {pin}\n"),
@@ -62,7 +68,7 @@ def load(args: argparse.Namespace) -> OkLine:
     to force a new QR login.  A restored session also brings back E2EE keys.
     """
     try:
-        sys.stdout.reconfigure(encoding="utf-8")   # Thai / emoji output on Windows
+        sys.stdout.reconfigure(encoding="utf-8")  # Thai / emoji output on Windows
     except Exception:
         pass
     if getattr(args, "token", None):
@@ -91,6 +97,6 @@ def all_contacts(api: OkLine) -> dict:
     ids = api.get_all_contact_ids() or []
     out: dict = {}
     for i in range(0, len(ids), 100):
-        res = api.get_contacts(ids[i:i + 100])
+        res = api.get_contacts(ids[i : i + 100])
         out.update((res.get("contacts", {}) or {}) if isinstance(res, dict) else {})
     return out

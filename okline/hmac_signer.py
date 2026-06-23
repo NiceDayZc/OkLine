@@ -23,7 +23,7 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .exceptions import LineError
 
@@ -48,13 +48,16 @@ class LtsmBridge:
     the bridge.
     """
 
-    def __init__(self, node_path: Optional[str] = None,
-                 origin: Optional[str] = None,
-                 start_timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        node_path: str | None = None,
+        origin: str | None = None,
+        start_timeout: float = 60.0,
+    ) -> None:
         self.node_path = node_path or os.environ.get("LINE_NODE") or "node"
         self.origin = origin or os.environ.get("LTSM_ORIGIN")
         self.start_timeout = start_timeout
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
         self._id = 0
 
@@ -71,9 +74,12 @@ class LtsmBridge:
             self._proc = subprocess.Popen(
                 [self.node_path, str(_BRIDGE_JS)],
                 cwd=str(_LTSM_DIR),
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                text=True, bufsize=1, env=env,
+                text=True,
+                bufsize=1,
+                env=env,
             )
         except FileNotFoundError as exc:
             raise HmacSignerError(
@@ -85,8 +91,8 @@ class LtsmBridge:
         ready_line = self._readline()
         try:
             msg = json.loads(ready_line)
-        except (TypeError, ValueError):
-            raise HmacSignerError(f"bridge did not start: {ready_line!r}")
+        except (TypeError, ValueError) as exc:
+            raise HmacSignerError(f"bridge did not start: {ready_line!r}") from exc
         if not msg.get("ready"):
             raise HmacSignerError(f"bridge init failed: {msg.get('error')}")
 
@@ -129,8 +135,7 @@ class LtsmBridge:
         any query string); ``body`` is the exact serialized request body (empty
         string for GET / bodyless requests).
         """
-        return self._call("hmac", accessToken=access_token or "", path=path,
-                           body=body or "")
+        return self._call("hmac", accessToken=access_token or "", path=path, body=body or "")
 
     # -- Curve25519 / E2EE (QR login) ----------------------------------------
     def curvekey_generate(self) -> int:
@@ -143,15 +148,17 @@ class LtsmBridge:
 
     def e2ee_create_channel(self, key_id: int, server_pubkey_b64: str) -> int:
         """Create an E2EE channel between our curve key and a peer public key."""
-        return self._call("e2ee_create_channel", keyId=key_id,
-                           serverPubKeyB64=server_pubkey_b64)
+        return self._call(
+            "e2ee_create_channel", keyId=key_id, serverPubKeyB64=server_pubkey_b64
+        )
 
     def e2ee_unwrap_keychain(self, channel_id: int, enc_keychain_b64: str) -> Any:
         """Unwrap the encrypted E2EE keychain returned by qrCodeLoginV2.
 
         Returns a list of *our* unwrapped E2EE key handles (numbers)."""
-        return self._call("e2ee_unwrap_keychain", channelId=channel_id,
-                           encKeyChainB64=enc_keychain_b64)
+        return self._call(
+            "e2ee_unwrap_keychain", channelId=channel_id, encKeyChainB64=enc_keychain_b64
+        )
 
     def e2ee_get_key_id(self, key_handle: int) -> int:
         """Numeric keyId of one of our unwrapped E2EE key handles."""
@@ -160,30 +167,61 @@ class LtsmBridge:
     def e2ee_public_key_for_handle(self, key_handle: int) -> str:
         return self._call("e2ee_public_key_for_handle", keyHandle=key_handle)
 
-    def e2ee_create_channel_with_pubkey(self, key_handle: int,
-                                        peer_pubkey_b64: str) -> int:
+    def e2ee_create_channel_with_pubkey(self, key_handle: int, peer_pubkey_b64: str) -> int:
         """Channel between our key handle and a peer's public key."""
-        return self._call("e2ee_create_channel_with_pubkey", keyHandle=key_handle,
-                           peerPubKeyB64=peer_pubkey_b64)
+        return self._call(
+            "e2ee_create_channel_with_pubkey",
+            keyHandle=key_handle,
+            peerPubKeyB64=peer_pubkey_b64,
+        )
 
-    def e2ee_encrypt_v2(self, channel_id: int, *, to: str, frm: str,
-                        sender_key_id: int, receiver_key_id: int,
-                        content_type: int, sequence_number: int,
-                        plaintext_b64: str) -> str:
+    def e2ee_encrypt_v2(
+        self,
+        channel_id: int,
+        *,
+        to: str,
+        frm: str,
+        sender_key_id: int,
+        receiver_key_id: int,
+        content_type: int,
+        sequence_number: int,
+        plaintext_b64: str,
+    ) -> str:
         """Encrypt (V2) -> base64 ciphertext."""
-        return self._call("e2ee_encrypt_v2", channelId=channel_id, to=to,
-                           **{"from": frm}, senderKeyId=sender_key_id,
-                           receiverKeyId=receiver_key_id, contentType=content_type,
-                           sequenceNumber=sequence_number, plaintextB64=plaintext_b64)
+        return self._call(
+            "e2ee_encrypt_v2",
+            channelId=channel_id,
+            to=to,
+            **{"from": frm},
+            senderKeyId=sender_key_id,
+            receiverKeyId=receiver_key_id,
+            contentType=content_type,
+            sequenceNumber=sequence_number,
+            plaintextB64=plaintext_b64,
+        )
 
-    def e2ee_decrypt_v2(self, channel_id: int, *, to: str, frm: str,
-                        sender_key_id: int, receiver_key_id: int,
-                        content_type: int, ciphertext_b64: str) -> str:
+    def e2ee_decrypt_v2(
+        self,
+        channel_id: int,
+        *,
+        to: str,
+        frm: str,
+        sender_key_id: int,
+        receiver_key_id: int,
+        content_type: int,
+        ciphertext_b64: str,
+    ) -> str:
         """Decrypt (V2) -> base64 plaintext."""
-        return self._call("e2ee_decrypt_v2", channelId=channel_id, to=to,
-                           **{"from": frm}, senderKeyId=sender_key_id,
-                           receiverKeyId=receiver_key_id, contentType=content_type,
-                           ciphertextB64=ciphertext_b64)
+        return self._call(
+            "e2ee_decrypt_v2",
+            channelId=channel_id,
+            to=to,
+            **{"from": frm},
+            senderKeyId=sender_key_id,
+            receiverKeyId=receiver_key_id,
+            contentType=content_type,
+            ciphertextB64=ciphertext_b64,
+        )
 
     def e2ee_decrypt_v1(self, channel_id: int, *, ciphertext_b64: str) -> str:
         """Decrypt (V1) -> base64 plaintext.
@@ -192,8 +230,9 @@ class LtsmBridge:
         takes only the channel + ciphertext (no to/from/keyIds/contentType — those
         are not part of the V1 AAD).
         """
-        return self._call("e2ee_decrypt_v1", channelId=channel_id,
-                           ciphertextB64=ciphertext_b64)
+        return self._call(
+            "e2ee_decrypt_v1", channelId=channel_id, ciphertextB64=ciphertext_b64
+        )
 
     # -- cross-session key persistence --------------------------------------
     def e2ee_export_key(self, key_handle: int) -> str:
@@ -205,15 +244,17 @@ class LtsmBridge:
         return self._call("e2ee_load_key", exportedB64=exported_b64)
 
     # -- group Letter Sealing -----------------------------------------------
-    def e2ee_unwrap_group_shared_key(self, channel_id: int, *,
-                                     enc_shared_key_b64: str) -> int:
+    def e2ee_unwrap_group_shared_key(self, channel_id: int, *, enc_shared_key_b64: str) -> int:
         """Unwrap a group's encrypted shared key -> a group-key handle.
 
         ``channel_id`` must be a channel built from *my* key handle + the group
         creator's public key (``e2ee_create_channel_with_pubkey``).
         """
-        return self._call("e2ee_unwrap_group_shared_key", channelId=channel_id,
-                           encSharedKeyB64=enc_shared_key_b64)
+        return self._call(
+            "e2ee_unwrap_group_shared_key",
+            channelId=channel_id,
+            encSharedKeyB64=enc_shared_key_b64,
+        )
 
     # -- teardown ------------------------------------------------------------
     def close(self) -> None:
@@ -240,7 +281,7 @@ class LtsmBridge:
             pass
 
     @staticmethod
-    def is_available(node_path: Optional[str] = None) -> bool:
+    def is_available(node_path: str | None = None) -> bool:
         """True if Node.js and the bridge artifacts are present."""
         node = node_path or os.environ.get("LINE_NODE") or "node"
         if not _BRIDGE_JS.exists() or not (_LTSM_DIR / "ltsm.wasm").exists():

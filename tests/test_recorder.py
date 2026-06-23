@@ -17,20 +17,29 @@ from __future__ import annotations
 
 import json
 
+from conftest import build_api, route
+
 from okline import Exchange, Recorder
 from okline.recorder import _MASK
-
-from conftest import build_api, enveloped, route
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def make_exchange(seq=1, *, endpoint="TalkService.TalkService.getProfile",
-                  request_headers=None, request_body=None,
-                  response_body=None, response_text="",
-                  status=200, ok=True, error=None,
-                  duration_ms=12.0, started_at=1_700_000_000.5):
+def make_exchange(
+    seq=1,
+    *,
+    endpoint="TalkService.TalkService.getProfile",
+    request_headers=None,
+    request_body=None,
+    response_body=None,
+    response_text="",
+    status=200,
+    ok=True,
+    error=None,
+    duration_ms=12.0,
+    started_at=1_700_000_000.5,
+):
     """Build a fully-populated :class:`Exchange` for assertions.
 
     Defaults carry a secret request header (``X-Line-Access``) and a secret
@@ -179,7 +188,7 @@ def test_recorder_respects_capacity_dropping_oldest():
     for i in range(1, 6):  # record seq 1..5
         rec.record(make_exchange(seq=i))
     seqs = [e.seq for e in rec.entries]
-    assert seqs == [3, 4, 5]          # 1 and 2 dropped, newest kept
+    assert seqs == [3, 4, 5]  # 1 and 2 dropped, newest kept
     assert len(rec.entries) == 3
 
 
@@ -268,11 +277,13 @@ def test_to_har_top_level_shape():
     """to_har() returns the canonical HAR envelope even when empty."""
     rec = Recorder()
     har = rec.to_har()
-    assert har == {"log": {
-        "version": "1.2",
-        "creator": {"name": "OkLine", "version": "1.0.0"},
-        "entries": [],
-    }}
+    assert har == {
+        "log": {
+            "version": "1.2",
+            "creator": {"name": "OkLine", "version": "1.0.0"},
+            "entries": [],
+        }
+    }
 
 
 def test_save_redact_override_reveals_secrets(tmp_path):
@@ -320,6 +331,5 @@ def test_build_api_dump_and_save_log(tmp_path):
     api.save_log(str(har_path), fmt="har")
     har = json.loads(har_path.read_text(encoding="utf-8"))
     assert len(har["log"]["entries"]) == 1
-    hdrs = {h["name"]: h["value"]
-            for h in har["log"]["entries"][0]["request"]["headers"]}
+    hdrs = {h["name"]: h["value"] for h in har["log"]["entries"][0]["request"]["headers"]}
     assert hdrs.get("X-Line-Access") == _MASK

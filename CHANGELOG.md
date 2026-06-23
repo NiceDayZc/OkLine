@@ -4,7 +4,23 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [2.5.3] - 2026-06-23
+## [2.6.0] - 2026-06-23
+
+A code-quality / architecture pass. No behaviour or wire changes — the public API,
+protocol, crypto and E2EE framing are unchanged, and the live integration test
+still passes.
+
+### Changed
+- **Tooling**: adopted **ruff** (lint + format) and **mypy**, configured in
+  `pyproject.toml`, with a `.pre-commit-config.yaml`, a `Makefile` (`make
+  lint/format/typecheck/test/check`) and a `[dev]` extra.
+- **Modernised type hints** to PEP 585/604 (`list`/`dict`/`X | None`) across the
+  package; imports sorted; whole codebase auto-formatted.
+- **Type-clean**: `mypy` now reports no issues. Introduced a typed
+  `services._base.ServiceMixin` so the mixin architecture type-checks, a shared
+  `_util.reconfigure_stdout_utf8` helper, and narrowed optional types.
+- Minor robustness: `raise ... from` on a re-raise; `qr_login` no longer calls the
+  PIN callback with `None`.
 
 A full system audit (every endpoint cross-checked against the real LINE Chrome
 bundle; 21/21 read endpoints re-verified live) plus a complete docs rewrite.

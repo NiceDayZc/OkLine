@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """export_contacts — dump all your contacts to CSV or JSON.
 
-    python examples/export_contacts.py                 # -> contacts.csv
-    python examples/export_contacts.py -o friends.json --format json
+python examples/export_contacts.py                 # -> contacts.csv
+python examples/export_contacts.py -o friends.json --format json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,13 +24,15 @@ def main() -> None:
         rows = []
         for mid, w in all_contacts(api).items():
             c = w.get("contact", w) if isinstance(w, dict) else {}
-            rows.append({
-                "mid": mid,
-                "displayName": c.get("displayName", ""),
-                "displayNameOverridden": c.get("displayNameOverridden", ""),
-                "statusMessage": c.get("statusMessage", ""),
-                "official": bool(c.get("capableBuddy")),
-            })
+            rows.append(
+                {
+                    "mid": mid,
+                    "displayName": c.get("displayName", ""),
+                    "displayNameOverridden": c.get("displayNameOverridden", ""),
+                    "statusMessage": c.get("statusMessage", ""),
+                    "official": bool(c.get("capableBuddy")),
+                }
+            )
         rows.sort(key=lambda r: (r["displayNameOverridden"] or r["displayName"]).lower())
         if args.format == "json":
             with open(args.output, "w", encoding="utf-8") as fh:

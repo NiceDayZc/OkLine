@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 
 import pytest
-
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from okline.crypto import (
@@ -33,8 +32,7 @@ def _gen_rsa_keyinfo(session_key: str = "S3SS10N", public_exponent: int = 65537)
     Returns ``(private_key, key_info)``.  ``nvalue``/``evalue`` are lowercase
     hex strings, exactly as the LINE server returns them from getRSAKeyInfo.
     """
-    private_key = rsa.generate_private_key(public_exponent=public_exponent,
-                                           key_size=2048)
+    private_key = rsa.generate_private_key(public_exponent=public_exponent, key_size=2048)
     numbers = private_key.public_key().public_numbers()
     info = RSAKeyInfo(
         keynm="testkey:1",
@@ -61,9 +59,12 @@ class TestBuildLoginPlaintext:
         session_key, identifier, password = "abc", "joe", "secret"
         out = build_login_plaintext(session_key, identifier, password)
         expected = (
-            chr(len(session_key)) + session_key
-            + chr(len(identifier)) + identifier
-            + chr(len(password)) + password
+            chr(len(session_key))
+            + session_key
+            + chr(len(identifier))
+            + identifier
+            + chr(len(password))
+            + password
         ).encode("utf-8")
         assert out == expected
 
@@ -73,13 +74,13 @@ class TestBuildLoginPlaintext:
         out = build_login_plaintext(session_key, identifier, password)
         # ASCII-only inputs => 1 byte per char, so we can index directly.
         assert out[0] == len(session_key)
-        assert out[1:1 + len(session_key)] == session_key.encode()
+        assert out[1 : 1 + len(session_key)] == session_key.encode()
         off = 1 + len(session_key)
         assert out[off] == len(identifier)
-        assert out[off + 1:off + 1 + len(identifier)] == identifier.encode()
+        assert out[off + 1 : off + 1 + len(identifier)] == identifier.encode()
         off += 1 + len(identifier)
         assert out[off] == len(password)
-        assert out[off + 1:] == password.encode()
+        assert out[off + 1 :] == password.encode()
 
     def test_empty_fields(self):
         """Empty strings produce a zero-length prefix (NUL byte) each."""
@@ -182,8 +183,7 @@ class TestRSAKeyInfo:
     def test_direct_construction(self):
         """The dataclass can be built directly with positional/keyword args."""
         info = RSAKeyInfo(keynm="k", nvalue="n", evalue="e", sessionKey="s")
-        assert (info.keynm, info.nvalue, info.evalue, info.sessionKey) == (
-            "k", "n", "e", "s")
+        assert (info.keynm, info.nvalue, info.evalue, info.sessionKey) == ("k", "n", "e", "s")
 
     def test_from_response_feeds_encrypt(self):
         """An RSAKeyInfo from a realistic response can drive encryption."""
@@ -227,7 +227,8 @@ class TestSha256:
     def test_known_vector(self):
         """Matches the canonical SHA-256 digest of the empty string."""
         empty = bytes.fromhex(
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
         assert sha256(b"") == empty
 
     def test_returns_32_raw_bytes(self):

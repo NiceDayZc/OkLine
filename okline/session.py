@@ -19,26 +19,26 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
 class Session:
     """Persisted credentials."""
 
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    certificate: Optional[str] = None
-    mid: Optional[str] = None
-    region_code: Optional[str] = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    certificate: str | None = None
+    mid: str | None = None
+    region_code: str | None = None
     #: Exported E2EE keychain (``E2EEManager.export_keys()``) so Letter Sealing
     #: works across sessions without a fresh QR login.  Private-key material —
     #: keep the file secret.
-    e2ee: Optional[Dict[str, Any]] = None
+    e2ee: dict[str, Any] | None = None
 
     # JSON uses the camelCase keys the rest of the ecosystem expects.
-    def to_dict(self) -> dict:
-        d = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "accessToken": self.access_token,
             "refreshToken": self.refresh_token,
             "certificate": self.certificate,
@@ -50,7 +50,7 @@ class Session:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Session":
+    def from_dict(cls, d: dict) -> Session:
         d = d or {}
         return cls(
             access_token=d.get("accessToken") or d.get("access_token"),
@@ -66,12 +66,15 @@ class Session:
             json.dump(self.to_dict(), fh, ensure_ascii=False, indent=2)
 
     @classmethod
-    def load(cls, path: str) -> "Session":
-        with open(path, "r", encoding="utf-8") as fh:
+    def load(cls, path: str) -> Session:
+        with open(path, encoding="utf-8") as fh:
             return cls.from_dict(json.load(fh))
 
     @classmethod
-    def from_tokens(cls, tokens) -> "Session":
-        return cls(access_token=tokens.access_token,
-                   refresh_token=tokens.refresh_token,
-                   certificate=tokens.certificate, mid=tokens.mid)
+    def from_tokens(cls, tokens) -> Session:
+        return cls(
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+            certificate=tokens.certificate,
+            mid=tokens.mid,
+        )

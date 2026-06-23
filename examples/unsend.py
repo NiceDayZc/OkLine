@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """unsend — recall (unsend) one of your own messages.
 
-    python examples/unsend.py <message_id>
+python examples/unsend.py <message_id>
 """
+
 from __future__ import annotations
 
 import argparse

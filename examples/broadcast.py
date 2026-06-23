@@ -5,13 +5,14 @@
 
 Use responsibly: only message chats/people who expect it. Not for spam.
 """
+
 from __future__ import annotations
 
 import argparse
 
-from okline.ratelimit import RateLimiter
-
 from _common import add_auth_args, load
+
+from okline.ratelimit import RateLimiter
 
 
 def main() -> None:
@@ -34,7 +35,7 @@ def main() -> None:
                 api.send_text(mid, args.message)
                 ok += 1
                 print(f"  sent -> {mid}")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 print(f"  FAIL -> {mid}: {exc}")
         print(f"\n{ok}/{len(args.to)} delivered")
     finally:

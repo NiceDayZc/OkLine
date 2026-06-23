@@ -10,8 +10,7 @@ from __future__ import annotations
 import base64
 import json
 
-from conftest import USER_MID, USER_MID2, build_api, enveloped
-from conftest import FakeResp
+from conftest import USER_MID, USER_MID2, FakeResp, build_api, enveloped
 
 from okline import e2ee_crypto as fr
 
@@ -24,7 +23,7 @@ def test_key_id_byte_roundtrip():
 
 
 def test_chunks_roundtrip():
-    ct = bytes(range(60))                      # any ciphertext >= 28 bytes
+    ct = bytes(range(60))  # any ciphertext >= 28 bytes
     chunks = fr.build_chunks(ct, sender_key_id=11, receiver_key_id=22)
     assert len(chunks) == 5
     # the wire order is [head16, body, tag12, sidBE, ridBE]
@@ -36,7 +35,7 @@ def test_chunks_roundtrip():
 
 
 def test_chunks_v1_roundtrip():
-    ct = bytes(range(60))                      # salt(8) + body(36) + tag(16)
+    ct = bytes(range(60))  # salt(8) + body(36) + tag(16)
     chunks = fr.build_chunks_v1(ct, sender_key_id=11, receiver_key_id=22)
     assert len(chunks) == 5
     # V1 wire order is [salt8, body, tag16, sidBE, ridBE] — NOT swapped
@@ -44,19 +43,20 @@ def test_chunks_v1_roundtrip():
     assert base64.b64decode(chunks[1]) == ct[8:-16]
     assert base64.b64decode(chunks[2]) == ct[-16:]
     ct2, sid, rid = fr.parse_chunks_v1(chunks)
-    assert ct2 == ct and sid == 11 and rid == 22   # concatenated in order
+    assert ct2 == ct and sid == 11 and rid == 22  # concatenated in order
 
 
 def test_message_e2ee_version():
     assert fr.message_e2ee_version({"contentMetadata": {"e2eeVersion": "1"}}) == 1
     assert fr.message_e2ee_version({"contentMetadata": {"e2eeVersion": "2"}}) == 2
-    assert fr.message_e2ee_version({"contentMetadata": {}}) == 2      # default
+    assert fr.message_e2ee_version({"contentMetadata": {}}) == 2  # default
     assert fr.message_e2ee_version({}) == 2
 
 
 # --- cross-session key persistence -----------------------------------------
 def test_session_persists_e2ee_keychain(tmp_path):
     from okline.session import Session
+
     exp = {"mid": "Ume", "latestKeyId": 5312832, "keys": {"5312832": "QkxPQg=="}}
     p = str(tmp_path / "sess.json")
     Session(access_token="T", mid="Ume", e2ee=exp).save(p)
@@ -69,6 +69,7 @@ def test_session_persists_e2ee_keychain(tmp_path):
 
 def test_e2ee_manager_export_load_roundtrip():
     from conftest import FakeBridge
+
     api = build_api(bridge=FakeBridge())
     mgr = api.e2ee
     mgr.my_mid, mgr.my_keys, mgr.latest_key_id = "Ume", {5312832: 10, 5312833: 11}, 5312833
@@ -76,17 +77,19 @@ def test_e2ee_manager_export_load_roundtrip():
     assert exp["mid"] == "Ume" and exp["latestKeyId"] == 5312833
     assert set(exp["keys"]) == {"5312832", "5312833"}
 
-    api2 = build_api(bridge=FakeBridge())          # fresh process / no QR login
+    api2 = build_api(bridge=FakeBridge())  # fresh process / no QR login
     assert api2.e2ee.load_from_export(exp) is True
     assert api2.e2ee.my_keys == {5312832: 10, 5312833: 11}
     assert api2.e2ee.latest_key_id == 5312833 and api2.e2ee.my_mid == "Ume"
-    api.close(); api2.close()
+    api.close()
+    api2.close()
 
 
 def test_e2ee_export_empty_when_not_ready():
     from conftest import FakeBridge
+
     api = build_api(bridge=FakeBridge())
-    assert api.e2ee.export_keys() == {}                 # no keys loaded
+    assert api.e2ee.export_keys() == {}  # no keys loaded
     assert api.e2ee.load_from_export({"keys": {}}) is False
     api.close()
 
@@ -94,10 +97,10 @@ def test_e2ee_export_empty_when_not_ready():
 # --- group vs 1:1 routing --------------------------------------------------
 def test_e2ee_is_group_routing():
     g = __import__("okline.e2ee", fromlist=["E2EEManager"]).E2EEManager._is_group
-    assert g({"to": "C" + "a" * 32, "toType": 2})       # group by toType
-    assert g({"to": "Cabc", "toType": 0})               # group by prefix (upper)
-    assert g({"to": "rabc"})                            # room (legacy lower)
-    assert not g({"to": "U" + "a" * 32, "toType": 0})   # 1:1 user
+    assert g({"to": "C" + "a" * 32, "toType": 2})  # group by toType
+    assert g({"to": "Cabc", "toType": 0})  # group by prefix (upper)
+    assert g({"to": "rabc"})  # room (legacy lower)
+    assert not g({"to": "U" + "a" * 32, "toType": 0})  # 1:1 user
     assert not g({"to": "Uabc"})
 
 
@@ -110,8 +113,15 @@ def test_plaintext_roundtrip():
 
 
 def test_build_e2ee_message():
-    msg = {"to": USER_MID, "text": "hi", "location": {"x": 1}, "from": "Ume",
-           "contentType": 0, "contentMetadata": {"REPLACE": "x"}, "toType": 0}
+    msg = {
+        "to": USER_MID,
+        "text": "hi",
+        "location": {"x": 1},
+        "from": "Ume",
+        "contentType": 0,
+        "contentMetadata": {"REPLACE": "x"},
+        "toType": 0,
+    }
     sealed = fr.build_e2ee_message(msg, ["a", "b", "c", "d", "e"], 2)
     # EL() drops text/location/from entirely (not text:null) — sending them 500s
     assert "text" not in sealed
@@ -119,18 +129,20 @@ def test_build_e2ee_message():
     assert "from" not in sealed
     assert sealed["chunks"] == ["a", "b", "c", "d", "e"]
     assert sealed["contentMetadata"]["e2eeVersion"] == "2"
-    assert "REPLACE" not in sealed["contentMetadata"]      # moved into ciphertext
+    assert "REPLACE" not in sealed["contentMetadata"]  # moved into ciphertext
 
 
 def test_is_e2ee_message():
-    assert fr.is_e2ee_message({"chunks": ["a", "b", "c", "d", "e"],
-                               "contentMetadata": {"e2eeVersion": "2"}})
+    assert fr.is_e2ee_message(
+        {"chunks": ["a", "b", "c", "d", "e"], "contentMetadata": {"e2eeVersion": "2"}}
+    )
     assert not fr.is_e2ee_message({"text": "plain", "contentMetadata": {}})
 
 
 # --- auto-encrypt retry on code 82 -----------------------------------------
 class _FakeE2EE:
     """Minimal stand-in for E2EEManager."""
+
     def __init__(self):
         self.encrypt_calls = 0
 
@@ -147,8 +159,11 @@ class _FakeE2EE:
 
 def test_send_message_seals_and_retries_on_code_82(make_api):
     state = {"n": 0}
-    err_body = {"code": 10051, "message": "RESPONSE_ERROR",
-                "data": {"code": 82, "reason": "can not send using plain mode"}}
+    err_body = {
+        "code": 10051,
+        "message": "RESPONSE_ERROR",
+        "data": {"code": 82, "reason": "can not send using plain mode"},
+    }
 
     def responder(method, url, kw):
         if url.endswith("sendMessage"):
@@ -156,15 +171,15 @@ def test_send_message_seals_and_retries_on_code_82(make_api):
             sealed = bool(body[1].get("chunks"))
             state["n"] += 1
             if not sealed:
-                return FakeResp(400, err_body)       # plain rejected
+                return FakeResp(400, err_body)  # plain rejected
             return enveloped({"id": "1", "chunks": body[1]["chunks"]})
         return enveloped({})
 
     api = make_api(responder)
-    api.e2ee = _FakeE2EE()                            # pretend E2EE is ready
+    api.e2ee = _FakeE2EE()  # pretend E2EE is ready
     res = api.send_text(USER_MID2, "secret")
-    assert api.e2ee.encrypt_calls == 1               # sealed once
-    assert state["n"] == 2                            # plain attempt + sealed retry
+    assert api.e2ee.encrypt_calls == 1  # sealed once
+    assert state["n"] == 2  # plain attempt + sealed retry
     assert isinstance(res, dict) and res.get("id") == "1"
 
 
@@ -179,13 +194,14 @@ def test_send_message_encrypt_true_seals_upfront(make_api):
 
     api = make_api(responder)
     api.e2ee = _FakeE2EE()
-    api.send_message({"to": USER_MID2, "text": "hi", "contentType": 0,
-                      "contentMetadata": {}}, encrypt=True)
-    assert seen["body"][1].get("chunks")             # sealed before sending
+    api.send_message(
+        {"to": USER_MID2, "text": "hi", "contentType": 0, "contentMetadata": {}}, encrypt=True
+    )
+    assert seen["body"][1].get("chunks")  # sealed before sending
     assert api.e2ee.encrypt_calls == 1
 
 
 def test_decrypt_message_passthrough_for_plain(make_api):
     api = make_api()
     plain = {"text": "hello", "contentMetadata": {}}
-    assert api.decrypt_message(plain) is plain       # not sealed -> unchanged
+    assert api.decrypt_message(plain) is plain  # not sealed -> unchanged

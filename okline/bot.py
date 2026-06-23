@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from .enums import OpType
 from .operations import Operation
@@ -38,12 +38,12 @@ from .operations import Operation
 log = logging.getLogger("okline.bot")
 
 
-def _is_group_mid(mid: Optional[str]) -> bool:
+def _is_group_mid(mid: str | None) -> bool:
     """True for a group/room/square mid (C/R/S prefix, any case)."""
     return (mid or "")[:1].lower() in ("c", "r", "s")
 
 
-def _reply_target(message: dict) -> Optional[str]:
+def _reply_target(message: dict) -> str | None:
     """Where a reply should go: the group/room if any, else the sender."""
     to = message.get("to") or ""
     if _is_group_mid(to):
@@ -54,28 +54,28 @@ def _reply_target(message: dict) -> Optional[str]:
 @dataclass
 class EventContext:
     api: Any
-    bot: "Bot"
+    bot: Bot
     op: Operation
 
     @property
-    def type(self) -> Optional[int]:
+    def type(self) -> int | None:
         return self.op.type
 
 
 @dataclass
 class MessageContext(EventContext):
-    message: Dict[str, Any] = None  # type: ignore[assignment]
+    message: dict[str, Any] = None  # type: ignore[assignment]
 
     @property
-    def text(self) -> Optional[str]:
+    def text(self) -> str | None:
         return self.message.get("text") if self.message else None
 
     @property
-    def sender(self) -> Optional[str]:
+    def sender(self) -> str | None:
         return self.message.get("from") if self.message else None
 
     @property
-    def to(self) -> Optional[str]:
+    def to(self) -> str | None:
         return self.message.get("to") if self.message else None
 
     @property
@@ -87,7 +87,7 @@ class MessageContext(EventContext):
         return _is_group_mid(self.to)
 
     @property
-    def reply_target(self) -> Optional[str]:
+    def reply_target(self) -> str | None:
         return _reply_target(self.message or {})
 
     def reply(self, text: str, **kw: Any) -> Any:
@@ -108,16 +108,17 @@ class MessageContext(EventContext):
 class Bot:
     """Dispatches operations to registered handlers."""
 
-    def __init__(self, api: Any, *, ignore_self: bool = True,
-                 auto_mark_read: bool = False) -> None:
+    def __init__(
+        self, api: Any, *, ignore_self: bool = True, auto_mark_read: bool = False
+    ) -> None:
         self.api = api
         self.ignore_self = ignore_self
         self.auto_mark_read = auto_mark_read
-        self._message_handlers: List[Callable[[MessageContext], Any]] = []
-        self._event_handlers: Dict[int, List[Callable[[EventContext], Any]]] = {}
-        self._commands: Dict[str, Callable[[MessageContext], Any]] = {}
+        self._message_handlers: list[Callable[[MessageContext], Any]] = []
+        self._event_handlers: dict[int, list[Callable[[EventContext], Any]]] = {}
+        self._commands: dict[str, Callable[[MessageContext], Any]] = {}
         self.command_prefix = "/"
-        self._self_mid: Optional[str] = getattr(api.tokens, "mid", None)
+        self._self_mid: str | None = getattr(api.tokens, "mid", None)
 
     # -- registration --------------------------------------------------------
     def on_message(self, fn: Callable[[MessageContext], Any]) -> Callable:
@@ -127,17 +128,21 @@ class Bot:
 
     def on(self, *op_types: int) -> Callable:
         """Decorator: register a handler for one or more :class:`OpType` values."""
+
         def deco(fn: Callable[[EventContext], Any]) -> Callable:
             for t in op_types:
                 self._event_handlers.setdefault(int(t), []).append(fn)
             return fn
+
         return deco
 
     def command(self, name: str) -> Callable:
         """Decorator: handle a text command like ``/name ...``."""
+
         def deco(fn: Callable[[MessageContext], Any]) -> Callable:
             self._commands[name] = fn
             return fn
+
         return deco
 
     # -- dispatch ------------------------------------------------------------
@@ -147,8 +152,11 @@ class Bot:
             self._safe(fn, EventContext(self.api, self, op))
 
         if op.type == OpType.RECEIVE_MESSAGE and op.message:
-            if self.ignore_self and self._self_mid and \
-                    op.message.get("from") == self._self_mid:
+            if (
+                self.ignore_self
+                and self._self_mid
+                and op.message.get("from") == self._self_mid
+            ):
                 return
             # transparently decrypt Letter-Sealed messages so ctx.text is the
             # plaintext (the ciphertext lives in `chunks`, not `text`).
@@ -157,7 +165,7 @@ class Bot:
                 if e2ee is not None and e2ee.is_ready():
                     try:
                         op.message = self.api.decrypt_message(op.message)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         log.debug("bot: could not decrypt message: %s", exc)
             ctx = MessageContext(self.api, self, op, message=op.message)
             if self.auto_mark_read:
@@ -165,17 +173,17 @@ class Bot:
             # command routing
             text = ctx.text or ""
             if text.startswith(self.command_prefix):
-                name = text[len(self.command_prefix):].split(None, 1)[0]
+                name = text[len(self.command_prefix) :].split(None, 1)[0]
                 if name in self._commands:
                     self._safe(self._commands[name], ctx)
                     return
-            for fn in self._message_handlers:
-                self._safe(fn, ctx)
+            for handler in self._message_handlers:
+                self._safe(handler, ctx)
 
     def _safe(self, fn: Callable, *args: Any) -> None:
         try:
             fn(*args)
-        except Exception as exc:  # noqa: BLE001 - one handler must not kill the loop
+        except Exception as exc:
             log.exception("handler %s failed: %s", getattr(fn, "__name__", fn), exc)
 
     # -- run loop ------------------------------------------------------------

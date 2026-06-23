@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """search_user — find a user by their public LINE ID, optionally add them.
 
-    python examples/search_user.py nb.vtg
-    python examples/search_user.py nb.vtg --add
+python examples/search_user.py nb.vtg
+python examples/search_user.py nb.vtg --add
 """
+
 from __future__ import annotations
 
 import argparse

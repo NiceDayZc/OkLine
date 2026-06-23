@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "okline"
-version = "2.5.3"
+version = "2.6.0"
 description = "OkLine — an unofficial, high-level Python client / SDK for the LINE Chrome messaging API (CHROMEOS 3.7.2): send messages, QR & email login, X-Hmac signing, and full response recording."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -39,6 +39,15 @@ dependencies = [
 [project.optional-dependencies]
 qr = ["qrcode>=7.0"]
 test = ["pytest>=7.0"]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.6",
+    "mypy>=1.8",
+    "types-requests",
+    "pre-commit>=3.5",
+    "build>=1.0",
+    "twine>=5.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/NiceDayZc/OkLine"
@@ -55,3 +64,52 @@ include = ["okline*"]
 
 [tool.setuptools.package-data]
 okline = ["py.typed", "ltsm/ltsm.wasm", "ltsm/ltsmSandbox.js", "ltsm/ltsm_bridge.js"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 95
+target-version = "py39"
+extend-exclude = ["okline/ltsm"]
+
+[tool.ruff.lint]
+# pyflakes(F), pycodestyle(E/W), isort(I), pyupgrade(UP), bugbear(B),
+# comprehensions(C4), pep8-naming(N), simplify(SIM), ruff(RUF)
+select = ["F", "E", "W", "I", "UP", "B", "C4", "N", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter
+    "B008",    # function calls in argument defaults (intentional, e.g. int(Enum))
+    "SIM105",  # try/except/pass is clearer than contextlib.suppress here
+    "SIM102",  # nested ifs are sometimes clearer than a combined condition
+    "RUF001", "RUF002", "RUF003",  # ambiguous unicode (Thai text in docs/strings)
+    "N818",    # exception names: our public API is Line*Error, not *Exception
+    # camelCase that deliberately mirrors LINE's wire field names / short aliases:
+    "N815",    # e.g. sessionKey, reqSeq (match the Thrift struct fields)
+    "N812", "N814", "N806",  # qrcode.constants as C, Message as _M, const-like locals
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402", "N802", "N806", "F841", "RUF012", "SIM115"]   # test ergonomics
+"examples/*" = ["E402", "T201"]
+"live_test.py" = ["E402", "T201"]
+# the CLI is an argparse/dispatch builder where compact one-liners are intentional:
+"okline/__main__.py" = ["E402", "E702"]
+"okline/transport.py" = ["E402"]                 # imports after module-level setup
+
+[tool.ruff.lint.isort]
+known-first-party = ["okline"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["okline"]
+ignore_missing_imports = true        # requests/cryptography/qrcode stubs optional
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+exclude = ["okline/ltsm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

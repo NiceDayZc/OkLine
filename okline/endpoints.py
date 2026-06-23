@@ -32,46 +32,32 @@ OBS_BASE = "https://obs.line-apps.com"
 #: The value is the path appended to ``/api/``.
 THRIFT_ENDPOINTS = {
     # --- Secondary QR-code login (LoginQrCode namespace) ---------------------
-    "LoginQrCode.SecondaryQrCodeLoginService.createSession":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createSession",
-    "LoginQrCode.SecondaryQrCodeLoginService.createQrCode":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createQrCode",
-    "LoginQrCode.SecondaryQrCodeLoginService.verifyCertificate":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/verifyCertificate",
-    "LoginQrCode.SecondaryQrCodeLoginService.createPinCode":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createPinCode",
-    "LoginQrCode.SecondaryQrCodeLoginService.qrCodeLoginV2":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/qrCodeLoginV2",
-    "LoginQrCode.SecondaryQrCodeLoginPermitNoticeService.checkQrCodeVerified":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginPermitNoticeService/checkQrCodeVerified",
-    "LoginQrCode.SecondaryQrCodeLoginPermitNoticeService.checkPinCodeVerified":
-        "talk/thrift/LoginQrCode/SecondaryQrCodeLoginPermitNoticeService/checkPinCodeVerified",
-
+    "LoginQrCode.SecondaryQrCodeLoginService.createSession": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createSession",
+    "LoginQrCode.SecondaryQrCodeLoginService.createQrCode": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createQrCode",
+    "LoginQrCode.SecondaryQrCodeLoginService.verifyCertificate": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/verifyCertificate",
+    "LoginQrCode.SecondaryQrCodeLoginService.createPinCode": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createPinCode",
+    "LoginQrCode.SecondaryQrCodeLoginService.qrCodeLoginV2": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/qrCodeLoginV2",
+    "LoginQrCode.SecondaryQrCodeLoginPermitNoticeService.checkQrCodeVerified": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginPermitNoticeService/checkQrCodeVerified",
+    "LoginQrCode.SecondaryQrCodeLoginPermitNoticeService.checkPinCodeVerified": "talk/thrift/LoginQrCode/SecondaryQrCodeLoginPermitNoticeService/checkPinCodeVerified",
     # --- Auth (Talk.AuthService) --------------------------------------------
     "Talk.AuthService.loginV2": "talk/thrift/Talk/AuthService/loginV2",
     "Talk.AuthService.logoutV2": "talk/thrift/Talk/AuthService/logoutV2",
     "Talk.AuthService.confirmE2EELogin": "talk/thrift/Talk/AuthService/confirmE2EELogin",
-
     # --- Channel (Talk.ChannelService) --------------------------------------
     "Talk.ChannelService.issueChannelToken": "talk/thrift/Talk/ChannelService/issueChannelToken",
-
     # --- Buddy (Talk.BuddyService) ------------------------------------------
     "Talk.BuddyService.getBuddyDetail": "talk/thrift/Talk/BuddyService/getBuddyDetail",
-
     # --- Relation (Relation.RelationService) --------------------------------
     "Relation.RelationService.addFriendByMid": "talk/thrift/Relation/RelationService/addFriendByMid",
     "Relation.RelationService.getTargetProfileNotice": "talk/thrift/Relation/RelationService/getTargetProfileNotice",
-
     # --- Shop (ShopService.ShopService) -------------------------------------
     "ShopService.ShopService.getOwnedProductSummaries": "shop/thrift/ShopService/ShopService/getOwnedProductSummaries",
     "ShopService.ShopService.setCustomizedImageText": "shop/thrift/ShopService/ShopService/setCustomizedImageText",
     "ShopService.ShopService.previewCustomizedImageText": "shop/thrift/ShopService/ShopService/previewCustomizedImageText",
-
     # --- Identity / keys (Talk.TalkService) ---------------------------------
     "Talk.TalkService.getRSAKeyInfo": "talk/thrift/Talk/TalkService/getRSAKeyInfo",
     "Talk.TalkService.getEncryptedIdentityV3": "talk/thrift/Talk/TalkService/getEncryptedIdentityV3",
     "Talk.TalkService.acquireEncryptedAccessToken": "talk/thrift/Talk/TalkService/acquireEncryptedAccessToken",
-
     # --- Profile / settings -------------------------------------------------
     "Talk.TalkService.getProfile": "talk/thrift/Talk/TalkService/getProfile",
     "Talk.TalkService.updateProfileAttributes": "talk/thrift/Talk/TalkService/updateProfileAttributes",
@@ -81,7 +67,6 @@ THRIFT_ENDPOINTS = {
     "Talk.TalkService.getConfigurations": "talk/thrift/Talk/TalkService/getConfigurations",
     "Talk.TalkService.getServerTime": "talk/thrift/Talk/TalkService/getServerTime",
     "Talk.TalkService.reportAbuseEx": "talk/thrift/Talk/TalkService/reportAbuseEx",
-
     # --- Contacts / relations ----------------------------------------------
     "Talk.TalkService.findAndAddContactsByMid": "talk/thrift/Talk/TalkService/findAndAddContactsByMid",
     "Talk.TalkService.getAllContactIds": "talk/thrift/Talk/TalkService/getAllContactIds",
@@ -96,7 +81,6 @@ THRIFT_ENDPOINTS = {
     "Talk.TalkService.blockRecommendation": "talk/thrift/Talk/TalkService/blockRecommendation",
     "Talk.TalkService.getRecommendationIds": "talk/thrift/Talk/TalkService/getRecommendationIds",
     "Talk.TalkService.getBlockedRecommendationIds": "talk/thrift/Talk/TalkService/getBlockedRecommendationIds",
-
     # --- Messaging ----------------------------------------------------------
     "Talk.TalkService.getLastOpRevision": "talk/thrift/Talk/TalkService/getLastOpRevision",
     "Talk.TalkService.sendMessage": "talk/thrift/Talk/TalkService/sendMessage",
@@ -114,7 +98,6 @@ THRIFT_ENDPOINTS = {
     "Talk.TalkService.getMessageBoxes": "talk/thrift/Talk/TalkService/getMessageBoxes",
     "Talk.TalkService.getPreviousMessagesV2WithRequest": "talk/thrift/Talk/TalkService/getPreviousMessagesV2WithRequest",
     "Talk.TalkService.getRecentMessagesV2": "talk/thrift/Talk/TalkService/getRecentMessagesV2",
-
     # --- Rooms / chats / groups --------------------------------------------
     "Talk.TalkService.inviteIntoRoom": "talk/thrift/Talk/TalkService/inviteIntoRoom",
     "Talk.TalkService.leaveRoom": "talk/thrift/Talk/TalkService/leaveRoom",
@@ -129,7 +112,6 @@ THRIFT_ENDPOINTS = {
     "Talk.TalkService.acceptChatInvitation": "talk/thrift/Talk/TalkService/acceptChatInvitation",
     "Talk.TalkService.getAllChatMids": "talk/thrift/Talk/TalkService/getAllChatMids",
     "Talk.TalkService.getChats": "talk/thrift/Talk/TalkService/getChats",
-
     # --- E2EE keys ----------------------------------------------------------
     "Talk.TalkService.getE2EEPublicKey": "talk/thrift/Talk/TalkService/getE2EEPublicKey",
     "Talk.TalkService.negotiateE2EEPublicKey": "talk/thrift/Talk/TalkService/negotiateE2EEPublicKey",

@@ -26,15 +26,12 @@ from okline import HmacSigner
 if not HmacSigner.is_available():
     pytest.skip("Node/bridge unavailable", allow_module_level=True)
 
-from okline import LtsmBridge  # noqa: E402  (imported after the skip guard)
-
+from okline import LtsmBridge
 
 # The canonical vector: empty access token, the createSession path and a "[{}]"
 # body must always hash to this exact X-Hmac.  This pins the key-derivation +
 # HMAC implementation inside ltsm.wasm.
-KNOWN_PATH = (
-    "/api/talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createSession"
-)
+KNOWN_PATH = "/api/talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createSession"
 KNOWN_BODY = "[{}]"
 KNOWN_HMAC = "xc7hTRfwaauLuMpoXQRt2DDZE+nu+8e4auOw1F/UQZo="
 

@@ -13,7 +13,8 @@ the message-construction helpers in ``static/js/main.js``::
 from __future__ import annotations
 
 import time
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from .enums import ContentType, MIDType
 
@@ -60,11 +61,16 @@ class Message:
         return msg
 
     @classmethod
-    def text(cls, to: str, text: str, *,
-             content_metadata: Optional[Mapping[str, Any]] = None,
-             related_message_id: Optional[str] = None,
-             message_relation_type: Optional[int] = None,
-             **extra: Any) -> dict:
+    def text(
+        cls,
+        to: str,
+        text: str,
+        *,
+        content_metadata: Mapping[str, Any] | None = None,
+        related_message_id: str | None = None,
+        message_relation_type: int | None = None,
+        **extra: Any,
+    ) -> dict:
         msg = cls._base(to, text=text, contentType=int(ContentType.NONE), **extra)
         if content_metadata:
             msg["contentMetadata"] = dict(content_metadata)
@@ -75,8 +81,16 @@ class Message:
         return msg
 
     @classmethod
-    def sticker(cls, to: str, package_id: str, sticker_id: str,
-                version: int = 1, *, sticker_text: str = "", **extra: Any) -> dict:
+    def sticker(
+        cls,
+        to: str,
+        package_id: str,
+        sticker_id: str,
+        version: int = 1,
+        *,
+        sticker_text: str = "",
+        **extra: Any,
+    ) -> dict:
         meta = {
             "STKID": str(sticker_id),
             "STKPKGID": str(package_id),
@@ -84,12 +98,21 @@ class Message:
         }
         if sticker_text:
             meta["STKTXT"] = sticker_text
-        return cls._base(to, text="", contentType=int(ContentType.STICKER),
-                         contentMetadata=meta, **extra)
+        return cls._base(
+            to, text="", contentType=int(ContentType.STICKER), contentMetadata=meta, **extra
+        )
 
     @classmethod
-    def location(cls, to: str, latitude: float, longitude: float, *,
-                 title: str = "", address: str = "", **extra: Any) -> dict:
+    def location(
+        cls,
+        to: str,
+        latitude: float,
+        longitude: float,
+        *,
+        title: str = "",
+        address: str = "",
+        **extra: Any,
+    ) -> dict:
         msg = cls._base(to, text="", contentType=int(ContentType.LOCATION), **extra)
         msg["location"] = {
             "title": title,
@@ -101,63 +124,113 @@ class Message:
         return msg
 
     @classmethod
-    def contact(cls, to: str, contact_mid: str, display_name: str = "",
-                **extra: Any) -> dict:
+    def contact(cls, to: str, contact_mid: str, display_name: str = "", **extra: Any) -> dict:
         meta = {"mid": contact_mid, "displayName": display_name}
-        return cls._base(to, text="", contentType=int(ContentType.CONTACT),
-                         contentMetadata=meta, **extra)
+        return cls._base(
+            to, text="", contentType=int(ContentType.CONTACT), contentMetadata=meta, **extra
+        )
 
     @classmethod
-    def flex(cls, to: str, alt_text: str, contents: Mapping[str, Any],
-             **extra: Any) -> dict:
+    def flex(cls, to: str, alt_text: str, contents: Mapping[str, Any], **extra: Any) -> dict:
         import json
+
         meta = {
             "FLEX_JSON": json.dumps(contents, ensure_ascii=False),
             "ALT_TEXT": alt_text,
         }
-        return cls._base(to, text="", contentType=int(ContentType.FLEX),
-                         contentMetadata=meta, **extra)
+        return cls._base(
+            to, text="", contentType=int(ContentType.FLEX), contentMetadata=meta, **extra
+        )
 
     @classmethod
-    def media_ref(cls, to: str, content_type: int, object_id: str, *,
-                  service: str = "talk", content_metadata: Optional[dict] = None,
-                  **extra: Any) -> dict:
+    def media_ref(
+        cls,
+        to: str,
+        content_type: int,
+        object_id: str,
+        *,
+        service: str = "talk",
+        content_metadata: dict | None = None,
+        **extra: Any,
+    ) -> dict:
         """A media message that references an already-uploaded OBS object."""
         meta = dict(content_metadata or {})
-        return cls._base(to, text="", contentType=int(content_type),
-                         contentMetadata=meta, **extra)
+        return cls._base(
+            to, text="", contentType=int(content_type), contentMetadata=meta, **extra
+        )
 
     # -- media builders (the Message half of a media send) -------------------
     # NOTE: a full media send is upload-then-send — the bytes go to OBS first,
     # then this Message is sent. Building the Message is exact; wiring the OBS
     # upload session is experimental (see docs/messaging.md).
     @classmethod
-    def image(cls, to: str, *, content_metadata: Optional[dict] = None,
-              **extra: Any) -> dict:
-        return cls._base(to, text="", contentType=int(ContentType.IMAGE),
-                         contentMetadata=dict(content_metadata or {}),
-                         hasContent=True, **extra)
+    def image(cls, to: str, *, content_metadata: dict | None = None, **extra: Any) -> dict:
+        return cls._base(
+            to,
+            text="",
+            contentType=int(ContentType.IMAGE),
+            contentMetadata=dict(content_metadata or {}),
+            hasContent=True,
+            **extra,
+        )
 
     @classmethod
-    def video(cls, to: str, duration_ms: int = 0, *,
-              content_metadata: Optional[dict] = None, **extra: Any) -> dict:
+    def video(
+        cls,
+        to: str,
+        duration_ms: int = 0,
+        *,
+        content_metadata: dict | None = None,
+        **extra: Any,
+    ) -> dict:
         meta = {"DURATION": str(duration_ms)}
         meta.update(content_metadata or {})
-        return cls._base(to, text="", contentType=int(ContentType.VIDEO),
-                         contentMetadata=meta, hasContent=True, **extra)
+        return cls._base(
+            to,
+            text="",
+            contentType=int(ContentType.VIDEO),
+            contentMetadata=meta,
+            hasContent=True,
+            **extra,
+        )
 
     @classmethod
-    def audio(cls, to: str, duration_ms: int = 0, *,
-              content_metadata: Optional[dict] = None, **extra: Any) -> dict:
+    def audio(
+        cls,
+        to: str,
+        duration_ms: int = 0,
+        *,
+        content_metadata: dict | None = None,
+        **extra: Any,
+    ) -> dict:
         meta = {"DURATION": str(duration_ms)}
         meta.update(content_metadata or {})
-        return cls._base(to, text="", contentType=int(ContentType.AUDIO),
-                         contentMetadata=meta, hasContent=True, **extra)
+        return cls._base(
+            to,
+            text="",
+            contentType=int(ContentType.AUDIO),
+            contentMetadata=meta,
+            hasContent=True,
+            **extra,
+        )
 
     @classmethod
-    def file(cls, to: str, file_name: str, file_size: int, *,
-             content_metadata: Optional[dict] = None, **extra: Any) -> dict:
+    def file(
+        cls,
+        to: str,
+        file_name: str,
+        file_size: int,
+        *,
+        content_metadata: dict | None = None,
+        **extra: Any,
+    ) -> dict:
         meta = {"FILE_NAME": file_name, "FILE_SIZE": str(file_size)}
         meta.update(content_metadata or {})
-        return cls._base(to, text="", contentType=int(ContentType.FILE),
-                         contentMetadata=meta, hasContent=True, **extra)
+        return cls._base(
+            to,
+            text="",
+            contentType=int(ContentType.FILE),
+            contentMetadata=meta,
+            hasContent=True,
+            **extra,
+        )

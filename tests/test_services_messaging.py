@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
+from conftest import GROUP_MID, ROOM_MID, USER_MID, USER_MID2, enveloped
 
 from okline.enums import (
     ContentType,
@@ -24,9 +24,6 @@ from okline.enums import (
     PredefinedReactionType,
     SyncReason,
 )
-
-from conftest import GROUP_MID, ROOM_MID, USER_MID, USER_MID2, enveloped
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,8 +53,8 @@ def test_send_message_passes_reqseq_and_message_dict(api, last_request):
     assert_method(api, "sendMessage")
     body = last_request(api)
     assert isinstance(body, list) and len(body) == 2
-    assert isinstance(body[0], int)          # auto-generated reqSeq
-    assert body[1] == msg                    # message struct forwarded verbatim
+    assert isinstance(body[0], int)  # auto-generated reqSeq
+    assert body[1] == msg  # message struct forwarded verbatim
 
 
 def test_send_message_honours_explicit_req_seq(api, last_request):
@@ -76,7 +73,7 @@ def test_send_text_builds_text_message(api, last_request):
     assert isinstance(body[0], int)
     payload = body[1]
     assert payload["to"] == USER_MID
-    assert payload["toType"] == 0                       # user mid -> USER
+    assert payload["toType"] == 0  # user mid -> USER
     assert payload["text"] == "hello world"
     assert payload["contentType"] == int(ContentType.NONE) == 0
     assert payload["sessionId"] == 0
@@ -88,7 +85,7 @@ def test_send_text_infers_totype_from_mid_prefix(api, last_request):
     assert last_request(api)[1]["toType"] == 2
 
     api.send_text(ROOM_MID, "yo")
-    assert last_request(api)[1]["toType"] == 1          # room -> ROOM
+    assert last_request(api)[1]["toType"] == 1  # room -> ROOM
 
 
 def test_reqseq_auto_increments_across_calls(api, last_request):
@@ -128,8 +125,7 @@ def test_send_sticker_default_version_is_one(api, last_request):
 # ---------------------------------------------------------------------------
 def test_send_location_builds_location_struct(api, last_request):
     """``send_location`` -> LOCATION content with a ``location`` struct."""
-    api.send_location(USER_MID, 35.6586, 139.7454,
-                      title="Tokyo Tower", address="Minato")
+    api.send_location(USER_MID, 35.6586, 139.7454, title="Tokyo Tower", address="Minato")
 
     assert_method(api, "sendMessage")
     payload = last_request(api)[1]
@@ -200,7 +196,7 @@ def test_unsend_message_body_shape(api, last_request):
     body = last_request(api)
     assert len(body) == 2
     assert isinstance(body[0], int)
-    assert body[1] == "123456789"          # coerced to string
+    assert body[1] == "123456789"  # coerced to string
 
 
 def test_unsend_message_explicit_req_seq(api, last_request):
@@ -214,8 +210,7 @@ def test_unsend_message_explicit_req_seq(api, last_request):
 # ---------------------------------------------------------------------------
 def test_send_postback_uses_uppercase_mid_fields(api, last_request):
     """``send_postback`` -> single request dict with chatMID / originMID."""
-    api.send_postback("m1", url="https://x.test/cb",
-                      chat_mid=GROUP_MID, origin_mid=USER_MID)
+    api.send_postback("m1", url="https://x.test/cb", chat_mid=GROUP_MID, origin_mid=USER_MID)
 
     assert_method(api, "sendPostback")
     body = last_request(api)
@@ -223,7 +218,7 @@ def test_send_postback_uses_uppercase_mid_fields(api, last_request):
     req = body[0]
     assert req["messageId"] == "m1"
     assert req["url"] == "https://x.test/cb"
-    assert req["chatMID"] == GROUP_MID         # note the uppercase MID
+    assert req["chatMID"] == GROUP_MID  # note the uppercase MID
     assert req["originMID"] == USER_MID
 
 
@@ -240,9 +235,7 @@ def test_react_default_reaction_is_nice(api, last_request):
     req = body[0]
     assert isinstance(req["reqSeq"], int)
     assert req["messageId"] == "msg-1"
-    assert req["reactionType"] == {
-        "predefinedReactionType": int(PredefinedReactionType.NICE)
-    }
+    assert req["reactionType"] == {"predefinedReactionType": int(PredefinedReactionType.NICE)}
 
 
 def test_react_custom_reaction(api, last_request):
@@ -274,10 +267,10 @@ def test_send_chat_checked_positional_args(api, last_request):
     assert_method(api, "sendChatChecked")
     body = last_request(api)
     assert len(body) == 4
-    assert isinstance(body[0], int)        # reqSeq
-    assert body[1] == GROUP_MID            # consumer / chat mid
-    assert body[2] == "555"                # stringified last message id
-    assert body[3] == 0                    # default sessionId
+    assert isinstance(body[0], int)  # reqSeq
+    assert body[1] == GROUP_MID  # consumer / chat mid
+    assert body[2] == "555"  # stringified last message id
+    assert body[3] == 0  # default sessionId
 
 
 def test_mark_as_read_is_alias_of_send_chat_checked(api, last_request):
@@ -341,8 +334,9 @@ def test_get_recent_messages_default_count(api, last_request):
 # ---------------------------------------------------------------------------
 def test_get_previous_messages_request_and_sync_reason(api, last_request):
     """``getPreviousMessagesV2WithRequest(request, syncReason)``."""
-    api.get_previous_messages(USER_MID, end_message_id=1000,
-                              delivered_time=1700000000000, count=30)
+    api.get_previous_messages(
+        USER_MID, end_message_id=1000, delivered_time=1700000000000, count=30
+    )
 
     assert_method(api, "getPreviousMessagesV2WithRequest")
     body = last_request(api)
@@ -354,12 +348,11 @@ def test_get_previous_messages_request_and_sync_reason(api, last_request):
         "deliveredTime": 1700000000000,
     }
     assert request["messagesCount"] == 30
-    assert sync_reason == int(SyncReason.OPERATION)     # default sync reason
+    assert sync_reason == int(SyncReason.OPERATION)  # default sync reason
 
 
 def test_get_previous_messages_custom_sync_reason(api, last_request):
-    api.get_previous_messages(USER_MID, "1", 1,
-                              sync_reason=int(SyncReason.FULL_SYNC))
+    api.get_previous_messages(USER_MID, "1", 1, sync_reason=int(SyncReason.FULL_SYNC))
     assert last_request(api)[1] == int(SyncReason.FULL_SYNC)
 
 
@@ -385,10 +378,15 @@ def test_get_message_boxes_request_struct(api, last_request):
 
 def test_get_message_boxes_overrides(api, last_request):
     """Keyword overrides map onto the wire field names."""
-    api.get_message_boxes(min_chat_id=GROUP_MID, active_only=False,
-                          unread_only=True, limit=10, with_unread_count=False,
-                          last_messages_per_box=0,
-                          sync_reason=int(SyncReason.OPERATION))
+    api.get_message_boxes(
+        min_chat_id=GROUP_MID,
+        active_only=False,
+        unread_only=True,
+        limit=10,
+        with_unread_count=False,
+        last_messages_per_box=0,
+        sync_reason=int(SyncReason.OPERATION),
+    )
     request, sync_reason = last_request(api)
     assert request["minChatId"] == GROUP_MID
     assert request["activeOnly"] is False
@@ -435,10 +433,9 @@ def test_get_message_read_range_body_shape(api, last_request):
 
 
 def test_get_message_read_range_custom_sync_reason(api, last_request):
-    api.get_message_read_range(iter([USER_MID]),
-                               sync_reason=int(SyncReason.FULL_SYNC))
+    api.get_message_read_range(iter([USER_MID]), sync_reason=int(SyncReason.FULL_SYNC))
     body = last_request(api)
-    assert body[0] == [USER_MID]            # iterable materialised
+    assert body[0] == [USER_MID]  # iterable materialised
     assert body[1] == int(SyncReason.FULL_SYNC)
 
 

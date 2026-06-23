@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """notify — watch incoming messages and print alert lines.
 
-    python examples/notify.py
-    python examples/notify.py --keyword urgent --group-only
+python examples/notify.py
+python examples/notify.py --keyword urgent --group-only
 """
+
 from __future__ import annotations
 
 import argparse
 
-from okline import Bot
-
 from _common import add_auth_args, load
+
+from okline import Bot
 
 
 def main() -> None:

@@ -20,8 +20,7 @@ import pytest
 # QR rendering depends on the optional 'qrcode' package; skip cleanly without it.
 pytest.importorskip("qrcode")
 
-from okline.qrterm import qr_matrix, qr_to_ascii, print_qr
-
+from okline.qrterm import print_qr, qr_matrix, qr_to_ascii
 
 # Arbitrary payload that is long enough to need a non-trivial QR version.
 DATA = "https://line.me/R/ti/p/okline-test-payload"
@@ -65,7 +64,7 @@ def test_qr_matrix_includes_quiet_zone_border():
     # The entire left/right `border` columns are light.
     for row in matrix:
         assert not any(row[:border])
-        assert not any(row[n - border:])
+        assert not any(row[n - border :])
 
 
 def test_qr_matrix_border_changes_size():

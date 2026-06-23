@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """block — list, add, or remove blocked contacts.
 
-    python examples/block.py list
-    python examples/block.py add U1234567890abcdef
-    python examples/block.py remove U1234567890abcdef
+python examples/block.py list
+python examples/block.py add U1234567890abcdef
+python examples/block.py remove U1234567890abcdef
 """
+
 from __future__ import annotations
 
 import argparse

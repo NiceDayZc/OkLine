@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """backup_chat — save the recent messages of a chat to a JSON file.
 
-    python examples/backup_chat.py C1234...chatmid -n 200 -o chat.json
+python examples/backup_chat.py C1234...chatmid -n 200 -o chat.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,14 +27,20 @@ def main() -> None:
         messages.extend(recent)
         while len(messages) < args.count and messages:
             oldest = messages[-1]
-            end_id, end_time = oldest.get("id"), int(oldest.get("deliveredTime") or
-                                                      oldest.get("createdTime") or 0)
-            page = api.get_previous_messages(args.chat_mid, end_id, end_time,
-                                             count=min(args.count - len(messages), 200)) or []
+            end_id, end_time = (
+                oldest.get("id"),
+                int(oldest.get("deliveredTime") or oldest.get("createdTime") or 0),
+            )
+            page = (
+                api.get_previous_messages(
+                    args.chat_mid, end_id, end_time, count=min(args.count - len(messages), 200)
+                )
+                or []
+            )
             if not page:
                 break
             messages.extend(page)
-        messages = messages[:args.count]
+        messages = messages[: args.count]
         with open(out, "w", encoding="utf-8") as fh:
             json.dump(messages, fh, ensure_ascii=False, indent=2)
         print(f"saved {len(messages)} messages -> {out}")

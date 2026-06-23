@@ -15,10 +15,10 @@ They are **optional** — every OkLine method still returns plain dicts. Use the
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def _g(d: Dict[str, Any], *names: str, default: Any = None) -> Any:
+def _g(d: dict[str, Any], *names: str, default: Any = None) -> Any:
     for n in names:
         if isinstance(d, dict) and n in d and d[n] is not None:
             return d[n]
@@ -28,19 +28,19 @@ def _g(d: Dict[str, Any], *names: str, default: Any = None) -> Any:
 @dataclass
 class Profile:
     mid: str = ""
-    userid: Optional[str] = None
+    userid: str | None = None
     display_name: str = ""
     status_message: str = ""
-    picture_status: Optional[str] = None
-    picture_path: Optional[str] = None
-    region_code: Optional[str] = None
-    phone: Optional[str] = None
-    allow_search_by_userid: Optional[bool] = None
-    allow_search_by_email: Optional[bool] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    picture_status: str | None = None
+    picture_path: str | None = None
+    region_code: str | None = None
+    phone: str | None = None
+    allow_search_by_userid: bool | None = None
+    allow_search_by_email: bool | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Profile":
+    def from_dict(cls, d: dict[str, Any]) -> Profile:
         d = d or {}
         return cls(
             mid=_g(d, "mid", default=""),
@@ -61,14 +61,14 @@ class Profile:
 class Contact:
     mid: str = ""
     display_name: str = ""
-    display_name_overridden: Optional[str] = None
+    display_name_overridden: str | None = None
     status_message: str = ""
-    picture_path: Optional[str] = None
-    type: Optional[int] = None
-    status: Optional[int] = None
-    relation: Optional[int] = None
+    picture_path: str | None = None
+    type: int | None = None
+    status: int | None = None
+    relation: int | None = None
     capable_buddy: bool = False
-    raw: Dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -80,7 +80,7 @@ class Contact:
         return bool(self.capable_buddy)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Contact":
+    def from_dict(cls, d: dict[str, Any]) -> Contact:
         # accept either a bare Contact or a getContactsV2 wrapper {contact: {...}}
         if isinstance(d, dict) and "contact" in d and isinstance(d["contact"], dict):
             d = d["contact"]
@@ -103,18 +103,18 @@ class Contact:
 class Group:
     chat_mid: str = ""
     name: str = ""
-    picture_path: Optional[str] = None
-    type: Optional[int] = None
-    member_mids: List[str] = field(default_factory=list)
-    invitee_mids: List[str] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict)
+    picture_path: str | None = None
+    type: int | None = None
+    member_mids: list[str] = field(default_factory=list)
+    invitee_mids: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def member_count(self) -> int:
         return len(self.member_mids)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Group":
+    def from_dict(cls, d: dict[str, Any]) -> Group:
         d = d or {}
         extra = _g(d, "extra", default={}) or {}
         gx = extra.get("groupExtra", {}) if isinstance(extra, dict) else {}
@@ -134,14 +134,17 @@ class Group:
 @dataclass
 class Room:
     mid: str = ""
-    member_mids: List[str] = field(default_factory=list)
-    raw: Dict[str, Any] = field(default_factory=dict)
+    member_mids: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Room":
+    def from_dict(cls, d: dict[str, Any]) -> Room:
         d = d or {}
-        return cls(mid=_g(d, "mid", default=""),
-                   member_mids=list(_g(d, "memberMids", default=[]) or []), raw=d)
+        return cls(
+            mid=_g(d, "mid", default=""),
+            member_mids=list(_g(d, "memberMids", default=[]) or []),
+            raw=d,
+        )
 
 
 @dataclass
@@ -149,19 +152,19 @@ class Message:
     id: str = ""
     from_mid: str = ""
     to: str = ""
-    to_type: Optional[int] = None
-    text: Optional[str] = None
+    to_type: int | None = None
+    text: str | None = None
     content_type: int = 0
-    content_metadata: Dict[str, Any] = field(default_factory=dict)
-    created_time: Optional[int] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    content_metadata: dict[str, Any] = field(default_factory=dict)
+    created_time: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_text(self) -> bool:
         return self.content_type == 0
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Message":
+    def from_dict(cls, d: dict[str, Any]) -> Message:
         d = d or {}
         ct = _g(d, "createdTime")
         return cls(
@@ -177,9 +180,9 @@ class Message:
         )
 
 
-def parse_contacts(result: Dict[str, Any]) -> Dict[str, Contact]:
+def parse_contacts(result: dict[str, Any]) -> dict[str, Contact]:
     """Turn a ``getContactsV2`` result into ``{mid: Contact}``."""
-    out: Dict[str, Contact] = {}
+    out: dict[str, Contact] = {}
     contacts = result.get("contacts", result) if isinstance(result, dict) else {}
     for mid, wrapper in (contacts or {}).items():
         out[mid] = Contact.from_dict(wrapper)

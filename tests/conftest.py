@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 import pytest
 
 from okline import OkLine
 from okline.transport import LineConfig, Tokens, Transport
-
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -31,10 +30,20 @@ USER_MID2 = "u" + "b" * 32
 GROUP_MID = "c" + "1" * 32
 ROOM_MID = "r" + "2" * 32
 
-SAMPLE_PROFILE = {"mid": USER_MID, "userid": "okline", "displayName": "Tester",
-                  "regionCode": "TH", "statusMessage": "hi"}
-SAMPLE_CONTACT = {"mid": USER_MID2, "displayName": "Friend", "type": 0,
-                  "status": 1, "relation": 0}
+SAMPLE_PROFILE = {
+    "mid": USER_MID,
+    "userid": "okline",
+    "displayName": "Tester",
+    "regionCode": "TH",
+    "statusMessage": "hi",
+}
+SAMPLE_CONTACT = {
+    "mid": USER_MID2,
+    "displayName": "Friend",
+    "type": 0,
+    "status": 1,
+    "relation": 0,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +52,7 @@ SAMPLE_CONTACT = {"mid": USER_MID2, "displayName": "Friend", "type": 0,
 class FakeResp:
     """Minimal stand-in for ``requests.Response``."""
 
-    def __init__(self, status: int, body: Any,
-                 headers: Optional[Dict[str, str]] = None) -> None:
+    def __init__(self, status: int, body: Any, headers: dict[str, str] | None = None) -> None:
         self.status_code = status
         self.text = body if isinstance(body, str) else json.dumps(body)
         self.headers = headers or {"content-type": "application/json"}
@@ -63,9 +71,9 @@ class FakeSession:
 
     def __init__(self, responder: Callable[[str, str, dict], FakeResp]) -> None:
         self.responder = responder
-        self.last: Optional[dict] = None
-        self.calls: List[dict] = []
-        self.proxies: Dict[str, str] = {}
+        self.last: dict | None = None
+        self.calls: list[dict] = []
+        self.proxies: dict[str, str] = {}
 
     def request(self, method: str, url: str, **kw: Any) -> FakeResp:
         self.last = dict(method=method, url=url, **kw)
@@ -73,8 +81,9 @@ class FakeSession:
         return self.responder(method, url, kw)
 
 
-def enveloped(data: Any, *, message: str = "OK", status: int = 200,
-              extra: Optional[dict] = None) -> FakeResp:
+def enveloped(
+    data: Any, *, message: str = "OK", status: int = 200, extra: dict | None = None
+) -> FakeResp:
     """Wrap ``data`` in LINE's ``{"message":"OK","data":...}`` envelope."""
     body = {"message": message, "data": data}
     if extra:
@@ -82,12 +91,13 @@ def enveloped(data: Any, *, message: str = "OK", status: int = 200,
     return FakeResp(status, body)
 
 
-def route(table: Dict[str, Any], default: Any = None):
+def route(table: dict[str, Any], default: Any = None):
     """Build a responder from a ``{endpoint_suffix: data_or_FakeResp}`` table.
 
     Keys are matched as URL suffixes (e.g. ``"getProfile"``).  Values that are
     not already a :class:`FakeResp` are wrapped in an OK envelope.
     """
+
     def responder(method: str, url: str, kw: dict) -> FakeResp:
         for suffix, value in table.items():
             if url.endswith(suffix):
@@ -95,6 +105,7 @@ def route(table: Dict[str, Any], default: Any = None):
         if isinstance(default, FakeResp):
             return default
         return enveloped(default if default is not None else {})
+
     return responder
 
 
@@ -105,12 +116,12 @@ class FakeBridge:
     """Deterministic stand-in for :class:`okline.LtsmBridge`."""
 
     def __init__(self) -> None:
-        self.signed: List[tuple] = []
+        self.signed: list[tuple] = []
         self._key = 0
 
     def sign(self, access_token: str, path: str, body: str = "") -> str:
         self.signed.append((access_token, path, body))
-        raw = f"{access_token}|{path}|{body}".encode("utf-8")
+        raw = f"{access_token}|{path}|{body}".encode()
         return base64.b64encode(raw[:32].ljust(32, b"\0")).decode("ascii")
 
     def curvekey_generate(self) -> int:
@@ -134,7 +145,7 @@ class FakeBridge:
 
     def e2ee_load_key(self, exported_b64: str) -> int:
         raw = base64.b64decode(exported_b64).decode()
-        return int(raw.split(":", 1)[1])      # round-trips e2ee_export_key
+        return int(raw.split(":", 1)[1])  # round-trips e2ee_export_key
 
     def close(self) -> None:
         pass
@@ -143,24 +154,28 @@ class FakeBridge:
 # ---------------------------------------------------------------------------
 # Builders / fixtures
 # ---------------------------------------------------------------------------
-def build_api(responder: Optional[Callable] = None, *,
-              access_token: Optional[str] = "TKN",
-              bridge: Optional[Any] = None,
-              enable_hmac: bool = False,
-              record: bool = True,
-              **client_kw: Any) -> OkLine:
+def build_api(
+    responder: Callable | None = None,
+    *,
+    access_token: str | None = "TKN",
+    bridge: Any | None = None,
+    enable_hmac: bool = False,
+    record: bool = True,
+    **client_kw: Any,
+) -> OkLine:
     """Build an :class:`OkLine` wired to a fake session (and optional bridge)."""
     responder = responder or (lambda m, u, kw: enveloped({}))
     cfg = LineConfig(enable_hmac=enable_hmac)
-    transport = Transport(cfg, Tokens(access_token=access_token),
-                          session=FakeSession(responder), signer=bridge)
+    transport = Transport(
+        cfg, Tokens(access_token=access_token), session=FakeSession(responder), signer=bridge
+    )
     return OkLine(transport=transport, record=record, **client_kw)
 
 
 @pytest.fixture
 def make_api():
     """Factory fixture: ``make_api(responder, **kw) -> OkLine``."""
-    created: List[OkLine] = []
+    created: list[OkLine] = []
 
     def _factory(responder=None, **kw) -> OkLine:
         api = build_api(responder, **kw)
@@ -189,9 +204,11 @@ def api(make_api):
 @pytest.fixture
 def last_request():
     """Helper to decode the JSON body of the last request a client sent."""
+
     def _decode(api: OkLine) -> Any:
         data = api.transport.session.last["data"]  # type: ignore[index]
         if isinstance(data, (bytes, bytearray)):
             data = data.decode("utf-8")
         return json.loads(data) if data else None
+
     return _decode

@@ -11,6 +11,7 @@ from enum import IntEnum
 
 class LoginType(IntEnum):
     """LoginType."""
+
     ID_CREDENTIAL = 0
     QRCODE = 1
     ID_CREDENTIAL_WITH_E2EE = 2
@@ -18,6 +19,7 @@ class LoginType(IntEnum):
 
 class IdentityProvider(IntEnum):
     """IdentityProvider."""
+
     UNKNOWN = 0
     LINE = 1
     NAVER_KR = 2
@@ -26,6 +28,7 @@ class IdentityProvider(IntEnum):
 
 class LoginResultType(IntEnum):
     """LoginResultType."""
+
     SUCCESS = 1
     REQUIRE_QRCODE = 2
     REQUIRE_DEVICE_CONFIRM = 3
@@ -34,6 +37,7 @@ class LoginResultType(IntEnum):
 
 class EncryptedAccessTokenFeatureType(IntEnum):
     """EncryptedAccessTokenFeatureType."""
+
     OBS_VIDEO = 1
     OBS_GENERAL = 2
     OBS_RINGBACK_TONE = 3
@@ -41,6 +45,7 @@ class EncryptedAccessTokenFeatureType(IntEnum):
 
 class MIDType(IntEnum):
     """MIDType."""
+
     USER = 0
     ROOM = 1
     GROUP = 2
@@ -53,6 +58,7 @@ class MIDType(IntEnum):
 
 class ContentType(IntEnum):
     """ContentType."""
+
     NONE = 0
     IMAGE = 1
     VIDEO = 2
@@ -80,6 +86,7 @@ class ContentType(IntEnum):
 
 class MessageRelationType(IntEnum):
     """MessageRelationType."""
+
     FORWARD = 0
     AUTO_REPLY = 1
     SUBORDINATE = 2
@@ -88,6 +95,7 @@ class MessageRelationType(IntEnum):
 
 class ServiceCode(IntEnum):
     """ServiceCode."""
+
     UNKNOWN = 0
     TALK = 1
     SQUARE = 2
@@ -95,6 +103,7 @@ class ServiceCode(IntEnum):
 
 class PredefinedReactionType(IntEnum):
     """PredefinedReactionType."""
+
     NICE = 2
     LOVE = 3
     FUN = 4
@@ -105,6 +114,7 @@ class PredefinedReactionType(IntEnum):
 
 class MessageReactionType(IntEnum):
     """MessageReactionType."""
+
     NICE = 2
     LOVE = 3
     FUN = 4
@@ -115,6 +125,7 @@ class MessageReactionType(IntEnum):
 
 class SyncReason(IntEnum):
     """SyncReason."""
+
     UNSPECIFIED = 0
     UNKNOWN = 1
     INITIALIZATION = 2
@@ -129,6 +140,7 @@ class SyncReason(IntEnum):
 
 class FullSyncRequestReason(IntEnum):
     """FullSyncRequestReason."""
+
     UNSPECIFIED = 0
     UNKNOWN = 1
     INITIALIZATION = 2
@@ -143,6 +155,7 @@ class FullSyncRequestReason(IntEnum):
 
 class ContactSetting(IntEnum):
     """ContactSetting."""
+
     CONTACT_SETTING_NOTIFICATION_DISABLE = 1
     CONTACT_SETTING_DISPLAY_NAME_OVERRIDE = 2
     CONTACT_SETTING_CONTACT_HIDE = 4
@@ -154,6 +167,7 @@ class ContactSetting(IntEnum):
 
 class ContactType(IntEnum):
     """ContactType."""
+
     MID = 0
     PHONE = 1
     EMAIL = 2
@@ -176,6 +190,7 @@ class ContactType(IntEnum):
 
 class ContactRelation(IntEnum):
     """ContactRelation."""
+
     ONEWAY = 0
     BOTH = 1
     NOT_REGISTERED = 2
@@ -183,6 +198,7 @@ class ContactRelation(IntEnum):
 
 class ContactStatus(IntEnum):
     """ContactStatus."""
+
     UNSPECIFIED = 0
     FRIEND = 1
     FRIEND_BLOCKED = 2
@@ -194,6 +210,7 @@ class ContactStatus(IntEnum):
 
 class ChatType(IntEnum):
     """ChatType."""
+
     GROUP = 0
     ROOM = 1
     PEER = 2
@@ -201,6 +218,7 @@ class ChatType(IntEnum):
 
 class UpdateChatRequestAttribute(IntEnum):
     """UpdateChatRequestAttribute."""
+
     NAME = 1
     PICTURE_STATUS = 2
     PREVENTED_JOIN_BY_TICKET = 4
@@ -212,6 +230,7 @@ class UpdateChatRequestAttribute(IntEnum):
 
 class GroupAttribute(IntEnum):
     """GroupAttribute."""
+
     NAME = 1
     PICTURE_STATUS = 2
     PREVENTED_JOIN_BY_TICKET = 4
@@ -223,6 +242,7 @@ class GroupAttribute(IntEnum):
 
 class ProfileAttribute(IntEnum):
     """ProfileAttribute."""
+
     ALL = 2147483647
     EMAIL = 1
     DISPLAY_NAME = 2
@@ -238,6 +258,7 @@ class ProfileAttribute(IntEnum):
 
 class SettingsAttribute(IntEnum):
     """SettingsAttribute."""
+
     NOTIFICATION_ENABLE = 0
     NOTIFICATION_MUTE_EXPIRATION = 1
     NOTIFICATION_NEW_MESSAGE = 2
@@ -340,6 +361,7 @@ class SettingsAttribute(IntEnum):
 
 class ReportSource(IntEnum):
     """ReportSource."""
+
     UNKNOWN = 0
     DIRECT_INVITATION = 1
     DIRECT_CHAT = 2
@@ -356,6 +378,7 @@ class ReportSource(IntEnum):
 
 class SpammerReason(IntEnum):
     """SpammerReason."""
+
     OTHER = 0
     ADVERTISING = 1
     GENDER_HARASSMENT = 2
@@ -366,6 +389,7 @@ class SpammerReason(IntEnum):
 
 class AgeCheckResult(IntEnum):
     """AgeCheckResult."""
+
     OVER = 1
     UNDER = 2
     UNDEFINED = 3
@@ -373,6 +397,7 @@ class AgeCheckResult(IntEnum):
 
 class ApplicationType(IntEnum):
     """ApplicationType."""
+
     IOS = 16
     IOS_RC = 17
     IOS_BETA = 18
@@ -510,6 +535,7 @@ class ApplicationType(IntEnum):
 
 class ErrorCode(IntEnum):
     """ErrorCode."""
+
     ILLEGAL_ARGUMENT = 0
     AUTHENTICATION_FAILED = 1
     DB_FAILED = 2
@@ -635,6 +661,7 @@ class ErrorCode(IntEnum):
 
 class SyncCategory(IntEnum):
     """SyncCategory."""
+
     NONE = 0
     PROFILE = 1
     SETTINGS = 2
@@ -650,6 +677,7 @@ class SyncCategory(IntEnum):
 
 class SyncCategoryOrdinal(IntEnum):
     """SyncCategoryOrdinal."""
+
     ALL = 0
     PROFILE = 1
     SETTINGS = 2
@@ -663,6 +691,7 @@ class SyncCategoryOrdinal(IntEnum):
 
 class OperationSyncCategory(IntEnum):
     """OperationSyncCategory."""
+
     PROFILE = 0
     SETTINGS = 1
     OPS = 2
@@ -678,6 +707,7 @@ class OperationSyncCategory(IntEnum):
 
 class OpType(IntEnum):
     """OpType."""
+
     END_OF_OPERATION = 0
     UPDATE_PROFILE = 1
     NOTIFIED_UPDATE_PROFILE = 2
@@ -820,6 +850,7 @@ class OpType(IntEnum):
 
 class ProductType(IntEnum):
     """ProductType."""
+
     STICKER = 1
     THEME = 2
     STICON = 3
@@ -827,6 +858,7 @@ class ProductType(IntEnum):
 
 class StickerResourceType(IntEnum):
     """StickerResourceType."""
+
     STATIC = 1
     ANIMATION = 2
     SOUND = 3
@@ -834,12 +866,14 @@ class StickerResourceType(IntEnum):
 
 class SticonResourceType(IntEnum):
     """SticonResourceType."""
+
     STATIC = 1
     ANIMATION = 2
 
 
 class NameTextStatus(IntEnum):
     """NameTextStatus."""
+
     OK = 0
     PRODUCT_UNSUPPORTED = 1
     TEXT_NOT_SPECIFIED = 2

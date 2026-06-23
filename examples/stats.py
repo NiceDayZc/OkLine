@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """stats — a richer dashboard of your LINE account.
 
-    python examples/stats.py
+python examples/stats.py
 """
+
 from __future__ import annotations
 
 import argparse

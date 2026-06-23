@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """profile — show a user's profile by mid (display name, status, buddy detail).
 
-    python examples/profile.py U0123456789abcdef0123456789abcdef
+python examples/profile.py U0123456789abcdef0123456789abcdef
 """
+
 from __future__ import annotations
 
 import argparse

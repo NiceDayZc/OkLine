@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import GROUP_MID, USER_MID2, build_api, enveloped, route
+from conftest import GROUP_MID, USER_MID2, enveloped, route
 
 from okline.selftest import CheckResult, print_results, run_selftest
 
@@ -40,8 +40,8 @@ def test_selftest_all_ok(make_api):
     # the discovery endpoints must be present
     names = {r.endpoint for r in results}
     assert "Talk.TalkService.getProfile" in names
-    assert "Talk.TalkService.getContactsV2" in names   # needed a contact
-    assert "Talk.TalkService.getChats" in names        # needed a chat
+    assert "Talk.TalkService.getContactsV2" in names  # needed a contact
+    assert "Talk.TalkService.getChats" in names  # needed a chat
 
 
 def test_selftest_reports_failures(make_api):
@@ -75,5 +75,6 @@ def test_print_results_counts(make_api, capsys):
 
 def test_cli_has_selftest_command():
     from okline.__main__ import build_parser
+
     args = build_parser().parse_args(["selftest", "--verbose"])
     assert args.command == "selftest" and args.verbose is True

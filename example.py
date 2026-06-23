@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from okline import OkLine, Message, enums
+from okline import OkLine, enums
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ def example_email_login() -> OkLine:
     result = api.auth.email_login(
         os.environ["LINE_EMAIL"],
         os.environ["LINE_PASSWORD"],
-        with_e2ee=False,          # set True to negotiate Letter Sealing
+        with_e2ee=False,  # set True to negotiate Letter Sealing
     )
     if result.success:
         print("logged in; access token:", (result.access_token or "")[:12], "...")
@@ -45,8 +45,10 @@ def example_qr_login() -> OkLine:
 
     def show_qr(url: str) -> None:
         from okline.qrterm import print_qr
-        print("\nScan this QR with the LINE app on your phone "
-              "(LINE > Add friends > QR code):\n")
+
+        print(
+            "\nScan this QR with the LINE app on your phone (LINE > Add friends > QR code):\n"
+        )
         # invert=False suits a dark terminal (PowerShell/Windows Terminal);
         # pass invert=True if your terminal has a light background.
         print_qr(url, border=2, invert=False)
@@ -79,11 +81,18 @@ def example_send(api: OkLine, to: str) -> None:
     api.send_text(to, "hello from python 👋")
     api.send_sticker(to, package_id="11537", sticker_id="52002734")
     api.send_location(to, 35.6586, 139.7454, title="Tokyo Tower")
-    api.send_flex(to, "a flex message", {
-        "type": "bubble",
-        "body": {"type": "box", "layout": "vertical",
-                 "contents": [{"type": "text", "text": "Hello Flex!"}]},
-    })
+    api.send_flex(
+        to,
+        "a flex message",
+        {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [{"type": "text", "text": "Hello Flex!"}],
+            },
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,5 +145,5 @@ if __name__ == "__main__":
     # api = example_with_token()
     # example_send(api, "u0123456789abcdef0123456789abcdef")
     example_contacts_and_groups(api)
-    #example_recording(api)
+    # example_recording(api)
     api.close()

@@ -12,7 +12,7 @@ We normalise all of those into :class:`LineApiError` subclasses.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 class LineError(Exception):
@@ -26,8 +26,7 @@ class LineConfigError(LineError):
 class LineTransportError(LineError):
     """Network / HTTP transport failure (timeout, connection reset, 5xx...)."""
 
-    def __init__(self, message: str, *, status: Optional[int] = None,
-                 body: Any = None) -> None:
+    def __init__(self, message: str, *, status: int | None = None, body: Any = None) -> None:
         super().__init__(message)
         self.status = status
         self.body = body
@@ -50,10 +49,17 @@ class LineApiError(LineError):
         The decoded JSON error body, untouched.
     """
 
-    def __init__(self, message: str, *, code: Optional[int] = None,
-                 reason: Optional[str] = None, metadata: Any = None,
-                 path: Optional[str] = None, status: Optional[int] = None,
-                 raw: Any = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        reason: str | None = None,
+        metadata: Any = None,
+        path: str | None = None,
+        status: int | None = None,
+        raw: Any = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.reason = reason
@@ -86,4 +92,8 @@ class LineLoginRequired(LineAuthError):
 
 # Maps the well-known talk error codes onto specific exception classes so that
 # callers can ``except LineAuthError`` rather than string-matching.
-_AUTH_CODES = {0, 1, 8}  # ILLEGAL_ARGUMENT/AUTHENTICATION_FAILED/NOT_AUTHORIZED_DEVICE families
+_AUTH_CODES = {
+    0,
+    1,
+    8,
+}  # ILLEGAL_ARGUMENT/AUTHENTICATION_FAILED/NOT_AUTHORIZED_DEVICE families

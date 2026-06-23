@@ -31,10 +31,10 @@ class AllServices(
 __all__ = [
     "AllServices",
     "AuthServiceMixin",
-    "MessagingMixin",
-    "ContactsMixin",
-    "ChatsMixin",
-    "ProfileMixin",
-    "E2EEMixin",
     "ChannelShopMixin",
+    "ChatsMixin",
+    "ContactsMixin",
+    "E2EEMixin",
+    "MessagingMixin",
+    "ProfileMixin",
 ]

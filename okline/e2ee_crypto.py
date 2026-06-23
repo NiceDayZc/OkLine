@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
 def _b64e(b: bytes) -> str:
@@ -39,13 +39,13 @@ def key_id_from_bytes(b: bytes) -> int:
     return int.from_bytes(bytes(b), "big")
 
 
-def serialize_plaintext(message: Dict[str, Any]) -> bytes:
+def serialize_plaintext(message: dict[str, Any]) -> bytes:
     """``wL(gL(message))`` — the bytes that get encrypted.
 
     JSON of ``{text, location, REPLACE}`` (omitting absent fields, like the JS
     ``JSON.stringify`` drops ``undefined``).
     """
-    obj: Dict[str, Any] = {}
+    obj: dict[str, Any] = {}
     if message.get("text") is not None:
         obj["text"] = message["text"]
     if message.get("location") is not None:
@@ -60,7 +60,7 @@ def serialize_plaintext(message: Dict[str, Any]) -> bytes:
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def deserialize_plaintext(data: bytes) -> Dict[str, Any]:
+def deserialize_plaintext(data: bytes) -> dict[str, Any]:
     """``bL`` — decrypted bytes back into ``{text, location, ...}``."""
     text = bytes(data).decode("utf-8", "replace")
     # xL sanitiser: strip C0 control chars that break JSON.parse
@@ -71,52 +71,50 @@ def deserialize_plaintext(data: bytes) -> Dict[str, Any]:
         return {"text": text}
 
 
-def build_chunks(ciphertext: bytes, sender_key_id: int,
-                 receiver_key_id: int) -> List[str]:
+def build_chunks(ciphertext: bytes, sender_key_id: int, receiver_key_id: int) -> list[str]:
     """``vL`` — split the V2 ciphertext into the 5 base64 chunks."""
     e = bytes(ciphertext)
     return [
-        _b64e(e[0:16]),                       # salt / header
-        _b64e(e[28:]),                        # body
-        _b64e(e[16:28]),                      # tag
+        _b64e(e[0:16]),  # salt / header
+        _b64e(e[28:]),  # body
+        _b64e(e[16:28]),  # tag
         _b64e(key_id_to_bytes(sender_key_id)),
         _b64e(key_id_to_bytes(receiver_key_id)),
     ]
 
 
-def parse_chunks(chunks: List[str]) -> Tuple[bytes, Optional[int], Optional[int]]:
+def parse_chunks(chunks: list[str]) -> tuple[bytes, int, int]:
     """``hL`` (+ key ids) — rebuild ``(ciphertext, sender_key_id, receiver_key_id)``
     for **V2** messages (salt/tag swapped: ``c[0] + c[2] + c[1]``)."""
     ct = _b64d(chunks[0]) + _b64d(chunks[2]) + _b64d(chunks[1])
-    sid = key_id_from_bytes(_b64d(chunks[3])) if len(chunks) > 3 else None
-    rid = key_id_from_bytes(_b64d(chunks[4])) if len(chunks) > 4 else None
+    sid = key_id_from_bytes(_b64d(chunks[3])) if len(chunks) > 3 else 0
+    rid = key_id_from_bytes(_b64d(chunks[4])) if len(chunks) > 4 else 0
     return ct, sid, rid
 
 
-def build_chunks_v1(ciphertext: bytes, sender_key_id: int,
-                    receiver_key_id: int) -> List[str]:
+def build_chunks_v1(ciphertext: bytes, sender_key_id: int, receiver_key_id: int) -> list[str]:
     """``mL`` — split the **V1** ciphertext: ``[salt(8), body, tag(16), sid, rid]``."""
     e = bytes(ciphertext)
     return [
-        _b64e(e[0:8]),                        # salt
-        _b64e(e[8:-16]),                      # body
-        _b64e(e[-16:]),                       # tag
+        _b64e(e[0:8]),  # salt
+        _b64e(e[8:-16]),  # body
+        _b64e(e[-16:]),  # tag
         _b64e(key_id_to_bytes(sender_key_id)),
         _b64e(key_id_to_bytes(receiver_key_id)),
     ]
 
 
-def parse_chunks_v1(chunks: List[str]) -> Tuple[bytes, Optional[int], Optional[int]]:
+def parse_chunks_v1(chunks: list[str]) -> tuple[bytes, int, int]:
     """``fL`` (+ key ids) — rebuild ``(ciphertext, sender_key_id, receiver_key_id)``
     for **V1** messages.  Unlike V2, the chunks are concatenated *in order*
     (``c[0] + c[1] + c[2]`` = salt + body + tag)."""
     ct = _b64d(chunks[0]) + _b64d(chunks[1]) + _b64d(chunks[2])
-    sid = key_id_from_bytes(_b64d(chunks[3])) if len(chunks) > 3 else None
-    rid = key_id_from_bytes(_b64d(chunks[4])) if len(chunks) > 4 else None
+    sid = key_id_from_bytes(_b64d(chunks[3])) if len(chunks) > 3 else 0
+    rid = key_id_from_bytes(_b64d(chunks[4])) if len(chunks) > 4 else 0
     return ct, sid, rid
 
 
-def message_e2ee_version(message: Dict[str, Any]) -> int:
+def message_e2ee_version(message: dict[str, Any]) -> int:
     """The Letter-Sealing version of a received message (1 or 2; default 2)."""
     meta = message.get("contentMetadata") or {}
     try:
@@ -125,8 +123,9 @@ def message_e2ee_version(message: Dict[str, Any]) -> int:
         return 2
 
 
-def build_e2ee_message(message: Dict[str, Any], chunks: List[str],
-                       version: int = 2) -> Dict[str, Any]:
+def build_e2ee_message(
+    message: dict[str, Any], chunks: list[str], version: int = 2
+) -> dict[str, Any]:
     """``EL`` — turn a plain message + chunks into the sealed Message struct.
 
     The real ``EL`` sets ``text``/``location`` to ``undefined`` (so ``JSON.stringify``
@@ -136,7 +135,7 @@ def build_e2ee_message(message: Dict[str, Any], chunks: List[str],
     """
     meta = dict(message.get("contentMetadata") or {})
     meta["e2eeVersion"] = str(version)
-    meta.pop("REPLACE", None)            # REPLACE is now inside the ciphertext
+    meta.pop("REPLACE", None)  # REPLACE is now inside the ciphertext
     out = dict(message)
     out["contentMetadata"] = meta
     out["chunks"] = chunks
@@ -146,7 +145,7 @@ def build_e2ee_message(message: Dict[str, Any], chunks: List[str],
     return out
 
 
-def is_e2ee_message(message: Dict[str, Any]) -> bool:
+def is_e2ee_message(message: dict[str, Any]) -> bool:
     """True if a received message is Letter-Sealed (has E2EE chunks)."""
     chunks = message.get("chunks")
     if not isinstance(chunks, list) or len(chunks) < 3:

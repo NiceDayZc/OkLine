@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable
 
+from ._util import reconfigure_stdout_utf8
 from .auth import AuthFlows, LoginResult
 from .obs import ObsClient
 from .operations import OperationReceiver
@@ -54,38 +55,48 @@ class OkLine(AllServices):
         Optional callback invoked with each :class:`Exchange` as it completes.
     """
 
-    def __init__(self, *, access_token: Optional[str] = None,
-                 refresh_token: Optional[str] = None,
-                 certificate: Optional[str] = None,
-                 mid: Optional[str] = None,
-                 config: Optional[LineConfig] = None,
-                 transport: Optional[Transport] = None,
-                 record: bool = True,
-                 record_capacity: int = 500,
-                 redact: bool = True,
-                 on_exchange: Optional[Callable[[Exchange], None]] = None) -> None:
-        tokens = Tokens(access_token=access_token, refresh_token=refresh_token,
-                        certificate=certificate, mid=mid)
+    def __init__(
+        self,
+        *,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+        certificate: str | None = None,
+        mid: str | None = None,
+        config: LineConfig | None = None,
+        transport: Transport | None = None,
+        record: bool = True,
+        record_capacity: int = 500,
+        redact: bool = True,
+        on_exchange: Callable[[Exchange], None] | None = None,
+    ) -> None:
+        tokens = Tokens(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            certificate=certificate,
+            mid=mid,
+        )
         self.transport = transport or Transport(config or LineConfig(), tokens)
         self.auth = AuthFlows(self.transport)
         self.ops = OperationReceiver(self.transport)
         self.obs = ObsClient(self.transport)
         from .e2ee import E2EEManager
-        self.e2ee = E2EEManager(self)   # Letter Sealing (ready after qr_login)
+
+        self.e2ee = E2EEManager(self)  # Letter Sealing (ready after qr_login)
         self._reqseq = 0
 
         # Response recording.
-        self.recorder: Optional[Recorder] = (
-            Recorder(capacity=record_capacity, redact=redact) if record else None)
+        self.recorder: Recorder | None = (
+            Recorder(capacity=record_capacity, redact=redact) if record else None
+        )
         self.transport.recorder = self.recorder
         if on_exchange:
             self.transport.hooks.append(on_exchange)
 
         # When loaded from a session file, persist refreshed tokens back to it.
-        self._session_path: Optional[str] = None
+        self._session_path: str | None = None
 
         # Auto-refresh the access token on a 401 if we hold a refresh token.
-        self.transport._refresh_hook = self._auto_refresh  # noqa: SLF001
+        self.transport._refresh_hook = self._auto_refresh
 
     # -- credential helpers --------------------------------------------------
     @property
@@ -105,7 +116,7 @@ class OkLine(AllServices):
         try:
             self.auth.refresh_access_token()
             log.info("access token refreshed")
-            if self._session_path:        # persist the new token
+            if self._session_path:  # persist the new token
                 self.save_tokens(self._session_path)
             return True
         except Exception as exc:  # pragma: no cover - network
@@ -113,7 +124,7 @@ class OkLine(AllServices):
             return False
 
     # -- session persistence -------------------------------------------------
-    def save_tokens(self, path: Optional[str] = None) -> None:
+    def save_tokens(self, path: str | None = None) -> None:
         """Save the current credentials to a JSON session file.
 
         If E2EE is active (after ``qr_login``), the unwrapped keychain is exported
@@ -121,6 +132,7 @@ class OkLine(AllServices):
         fresh QR login.
         """
         from .session import Session
+
         path = path or self._session_path
         if not path:
             raise ValueError("no path given and no session file attached")
@@ -134,16 +146,22 @@ class OkLine(AllServices):
         s.save(path)
 
     @classmethod
-    def from_tokens_file(cls, path: str, **kw: Any) -> "OkLine":
+    def from_tokens_file(cls, path: str, **kw: Any) -> OkLine:
         """Build a client from a session file (and auto-save refreshed tokens).
 
         Restores the E2EE keychain from the file if present, so Letter Sealing is
         available without re-scanning a QR code.
         """
         from .session import Session
+
         s = Session.load(path)
-        api = cls(access_token=s.access_token, refresh_token=s.refresh_token,
-                  certificate=s.certificate, mid=s.mid, **kw)
+        api = cls(
+            access_token=s.access_token,
+            refresh_token=s.refresh_token,
+            certificate=s.certificate,
+            mid=s.mid,
+            **kw,
+        )
         api._session_path = path
         if s.e2ee:
             try:
@@ -166,12 +184,12 @@ class OkLine(AllServices):
 
     # -- recording / "paste resp" -------------------------------------------
     @property
-    def history(self) -> List[Exchange]:
+    def history(self) -> list[Exchange]:
         """Every recorded :class:`Exchange` this session (newest last)."""
         return self.recorder.entries if self.recorder else []
 
     @property
-    def last(self) -> Optional[Exchange]:
+    def last(self) -> Exchange | None:
         """The most recent recorded :class:`Exchange` (or ``None``)."""
         return self.recorder.last if self.recorder else None
 
@@ -180,20 +198,18 @@ class OkLine(AllServices):
         self.transport.hooks.append(hook)
         return hook
 
-    def print_last(self, *, redact: Optional[bool] = None,
-                   file=None) -> None:
+    def print_last(self, *, redact: bool | None = None, file=None) -> None:
         """Print the last exchange as an HTTP transcript."""
         if not self.last:
             return
         r = self.recorder.redact if redact is None else redact  # type: ignore[union-attr]
         _safe_print(self.last.pretty(redact=r), file)
 
-    def dump(self, *, redact: Optional[bool] = None) -> str:
+    def dump(self, *, redact: bool | None = None) -> str:
         """Return every recorded exchange as one big transcript string."""
         return self.recorder.dump_text(redact=redact) if self.recorder else ""
 
-    def save_log(self, path: str, *, fmt: str = "text",
-                 redact: Optional[bool] = None) -> None:
+    def save_log(self, path: str, *, fmt: str = "text", redact: bool | None = None) -> None:
         """Save the session log. ``fmt`` is ``"text"``, ``"json"`` or ``"har"``."""
         if self.recorder:
             self.recorder.save(path, fmt=fmt, redact=redact)
@@ -223,6 +239,7 @@ class OkLine(AllServices):
         :meth:`qr_login` this session). Returns the message with plaintext
         ``text``; non-sealed messages are returned unchanged."""
         from .e2ee_crypto import is_e2ee_message
+
         if not is_e2ee_message(message):
             return message
         return self.e2ee.decrypt(message)
@@ -230,12 +247,21 @@ class OkLine(AllServices):
     def send_encrypted_text(self, to: str, text: str, **kw: Any) -> Any:
         """Send a Letter-Sealed text message (1:1)."""
         from .models import Message as _M
+
         return self.send_message(_M.text(to, text, **kw), encrypt=True)
 
     # -- media send (V1 / non-E2EE) -----------------------------------------
-    def _send_media(self, to: str, data: bytes, content_type: int, *,
-                    name: str, obs_type: str, cat: Optional[str] = None,
-                    duration_ms: int = 0) -> Any:
+    def _send_media(
+        self,
+        to: str,
+        data: bytes,
+        content_type: int,
+        *,
+        name: str,
+        obs_type: str,
+        cat: str | None = None,
+        duration_ms: int = 0,
+    ) -> Any:
         """Send a media message: post a placeholder, then upload the bytes to
         OBS at ``/r/talk/m/<messageId>`` (the V1, non-E2EE flow).
 
@@ -244,6 +270,7 @@ class OkLine(AllServices):
         from .enums import ContentType, EncryptedAccessTokenFeatureType
         from .exceptions import LineApiError
         from .models import Message as _M
+
         ct = int(content_type)
         if ct == int(ContentType.IMAGE):
             msg = _M.image(to)
@@ -256,32 +283,36 @@ class OkLine(AllServices):
         sent = self.send_message(msg)
         msg_id = sent.get("id") if isinstance(sent, dict) else None
         if not msg_id:
-            raise LineApiError("sendMessage returned no message id for media",
-                               raw=sent)
-        enc = self.get_encrypted_access_token(
-            int(EncryptedAccessTokenFeatureType.OBS_GENERAL))
-        self.obs.upload_message_object(str(msg_id), data, name=name,
-                                       obs_type=obs_type, cat=cat, enc_token=enc)
+            raise LineApiError("sendMessage returned no message id for media", raw=sent)
+        enc = self.get_encrypted_access_token(int(EncryptedAccessTokenFeatureType.OBS_GENERAL))
+        self.obs.upload_message_object(
+            str(msg_id), data, name=name, obs_type=obs_type, cat=cat, enc_token=enc
+        )
         return sent
 
-    def send_image(self, to: str, file: Any, *, name: Optional[str] = None) -> Any:
+    def send_image(self, to: str, file: Any, *, name: str | None = None) -> Any:
         data, name = _read_media(file, name, "image.jpg")
-        return self._send_media(to, data, _ct().IMAGE, name=name,
-                                obs_type="image", cat="original")
+        return self._send_media(
+            to, data, _ct().IMAGE, name=name, obs_type="image", cat="original"
+        )
 
-    def send_video(self, to: str, file: Any, *, name: Optional[str] = None,
-                   duration_ms: int = 0) -> Any:
+    def send_video(
+        self, to: str, file: Any, *, name: str | None = None, duration_ms: int = 0
+    ) -> Any:
         data, name = _read_media(file, name, "video.mp4")
-        return self._send_media(to, data, _ct().VIDEO, name=name,
-                                obs_type="video", duration_ms=duration_ms)
+        return self._send_media(
+            to, data, _ct().VIDEO, name=name, obs_type="video", duration_ms=duration_ms
+        )
 
-    def send_audio(self, to: str, file: Any, *, name: Optional[str] = None,
-                   duration_ms: int = 0) -> Any:
+    def send_audio(
+        self, to: str, file: Any, *, name: str | None = None, duration_ms: int = 0
+    ) -> Any:
         data, name = _read_media(file, name, "audio.m4a")
-        return self._send_media(to, data, _ct().AUDIO, name=name,
-                                obs_type="audio", duration_ms=duration_ms)
+        return self._send_media(
+            to, data, _ct().AUDIO, name=name, obs_type="audio", duration_ms=duration_ms
+        )
 
-    def send_file(self, to: str, file: Any, *, name: Optional[str] = None) -> Any:
+    def send_file(self, to: str, file: Any, *, name: str | None = None) -> Any:
         data, name = _read_media(file, name, "file.bin")
         return self._send_media(to, data, _ct().FILE, name=name, obs_type="file")
 
@@ -292,7 +323,7 @@ class OkLine(AllServices):
         if signer is not None:
             signer.close()
 
-    def __enter__(self) -> "OkLine":
+    def __enter__(self) -> OkLine:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -301,18 +332,21 @@ class OkLine(AllServices):
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         who = self.transport.tokens.mid or "anonymous"
         n = len(self.history)
-        return (f"<OkLine {who} app={self.config.application_header.split(chr(9))[0]} "
-                f"calls={n}>")
+        return (
+            f"<OkLine {who} app={self.config.application_header.split(chr(9))[0]} calls={n}>"
+        )
 
 
 def _ct():
     from .enums import ContentType
+
     return ContentType
 
 
-def _read_media(file: Any, name: Optional[str], default: str):
+def _read_media(file: Any, name: str | None, default: str):
     """Accept a path (str/Path) or raw bytes; return (data, name)."""
     import os
+
     if isinstance(file, (bytes, bytearray)):
         return bytes(file), (name or default)
     path = os.fspath(file)
@@ -324,10 +358,7 @@ def _read_media(file: Any, name: Optional[str], default: str):
 def _safe_print(text: str, file=None) -> None:
     """Print possibly-non-ASCII text without dying on a cp1252 Windows console."""
     stream = file or sys.stdout
-    try:
-        stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    reconfigure_stdout_utf8(stream)
     try:
         print(text, file=stream)
     except UnicodeEncodeError:

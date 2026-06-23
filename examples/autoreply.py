@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """autoreply — a keyword auto-reply bot driven by simple rules.
 
-    python examples/autoreply.py --rule "hello=hi there!" --rule "bye=see ya"
-    python examples/autoreply.py --ignore-case --rule "PING=pong"
+python examples/autoreply.py --rule "hello=hi there!" --rule "bye=see ya"
+python examples/autoreply.py --ignore-case --rule "PING=pong"
 """
+
 from __future__ import annotations
 
 import argparse
 
-from okline import Bot
-
 from _common import add_auth_args, load
+
+from okline import Bot
 
 
 def main() -> None:
     p = add_auth_args(argparse.ArgumentParser(description=__doc__))
-    p.add_argument("--rule", action="append", default=[], metavar="KEYWORD=REPLY",
-                   help="reply with REPLY when KEYWORD appears (repeatable)")
-    p.add_argument("--ignore-case", action="store_true",
-                   help="match keywords case-insensitively")
+    p.add_argument(
+        "--rule",
+        action="append",
+        default=[],
+        metavar="KEYWORD=REPLY",
+        help="reply with REPLY when KEYWORD appears (repeatable)",
+    )
+    p.add_argument(
+        "--ignore-case", action="store_true", help="match keywords case-insensitively"
+    )
     args = p.parse_args()
 
     rules: dict[str, str] = {}

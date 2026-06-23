@@ -17,24 +17,21 @@ that they are positive ints -- never an exact sequence number.
 from __future__ import annotations
 
 import pytest
-
-from okline.enums import (
-    ChatType,
-    ContactSetting,
-    ContactType,
-    SyncReason,
-    UpdateChatRequestAttribute,
-)
-
 from conftest import (
     GROUP_MID,
     ROOM_MID,
     SAMPLE_CONTACT,
-    SAMPLE_PROFILE,
     USER_MID,
     USER_MID2,
     enveloped,
     route,
+)
+
+from okline.enums import (
+    ChatType,
+    ContactSetting,
+    SyncReason,
+    UpdateChatRequestAttribute,
 )
 
 
@@ -180,8 +177,7 @@ class TestContactSettings:
     def test_update_contact_setting_arg_order(self, make_api, last_request):
         """updateContactSetting -> [reqSeq, mid, int(flag), str(value)]."""
         api = make_api(route({"updateContactSetting": {}}))
-        api.update_contact_setting(
-            USER_MID2, ContactSetting.CONTACT_SETTING_FAVORITE, "true")
+        api.update_contact_setting(USER_MID2, ContactSetting.CONTACT_SETTING_FAVORITE, "true")
 
         assert_endpoint(api, "TalkService", "updateContactSetting")
         body = last_request(api)
@@ -391,8 +387,11 @@ class TestChatListing:
     def test_get_all_chat_mids_flags_and_sync_reason(self, make_api, last_request):
         """The boolean filters and syncReason are all overridable."""
         api = make_api(route({"getAllChatMids": {}}))
-        api.get_all_chat_mids(with_member_chats=False, with_invited_chats=False,
-                              sync_reason=int(SyncReason.OPERATION))
+        api.get_all_chat_mids(
+            with_member_chats=False,
+            with_invited_chats=False,
+            sync_reason=int(SyncReason.OPERATION),
+        )
 
         body = last_request(api)
         assert body[0] == {"withMemberChats": False, "withInvitedChats": False}
@@ -406,7 +405,7 @@ class TestChatListing:
         assert result == {"chats": [{"chatMid": GROUP_MID}]}
         assert_endpoint(api, "TalkService", "getChats")
         body = last_request(api)
-        assert len(body) == 2          # struct + syncReason (matches the real client)
+        assert len(body) == 2  # struct + syncReason (matches the real client)
         assert body[0] == {
             "chatMids": [GROUP_MID],
             "withMembers": True,
@@ -438,12 +437,12 @@ class TestChatListing:
 
         api.transport.call = fake_call
         res = api.get_chats([f"C{i}" for i in range(230)])
-        assert sizes == [100, 100, 30]            # chunked at GET_CHATS_LIMIT
-        assert len(res["chats"]) == 230           # merged back together
+        assert sizes == [100, 100, 30]  # chunked at GET_CHATS_LIMIT
+        assert len(res["chats"]) == 230  # merged back together
 
         sizes.clear()
         api.get_chats([f"C{i}" for i in range(50)])
-        assert sizes == [50]                      # <= limit -> a single request
+        assert sizes == [50]  # <= limit -> a single request
 
 
 # ===========================================================================
@@ -533,8 +532,15 @@ class TestCrossCutting:
         """A non-OK envelope (HTTP 200) is surfaced as a LineApiError."""
         from okline.exceptions import LineApiError
 
-        api = make_api(route({"getAllContactIds": enveloped(
-            {"code": 5, "message": "NOT_FOUND"}, message="NOT_FOUND")}))
+        api = make_api(
+            route(
+                {
+                    "getAllContactIds": enveloped(
+                        {"code": 5, "message": "NOT_FOUND"}, message="NOT_FOUND"
+                    )
+                }
+            )
+        )
         with pytest.raises(LineApiError):
             api.get_all_contact_ids()
 

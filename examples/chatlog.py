@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """chatlog — pretty-print a chat's recent messages, decrypting E2EE when possible.
 
-    python examples/chatlog.py C1234...chatmid
-    python examples/chatlog.py U5678...usermid -n 50
+python examples/chatlog.py C1234...chatmid
+python examples/chatlog.py U5678...usermid -n 50
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,7 @@ def main() -> None:
         me = api.get_profile() or {}
         names.setdefault(me.get("mid"), me.get("displayName") or "me")
         msgs = api.get_recent_messages(args.chat_mid, args.count) or []
-        for m in reversed(msgs):                       # oldest first
+        for m in reversed(msgs):  # oldest first
             if m.get("chunks"):
                 if ready:
                     try:

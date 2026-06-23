@@ -14,6 +14,14 @@ call mutates (e.g. ``tokens.mid`` / ``tokens.channel_access_token``).
 from __future__ import annotations
 
 import pytest
+from conftest import (
+    GROUP_MID,
+    SAMPLE_PROFILE,
+    USER_MID,
+    USER_MID2,
+    enveloped,
+    route,
+)
 
 from okline.enums import (
     ApplicationType,
@@ -23,15 +31,6 @@ from okline.enums import (
     SettingsAttribute,
     SpammerReason,
     SyncReason,
-)
-
-from conftest import (
-    GROUP_MID,
-    SAMPLE_PROFILE,
-    USER_MID,
-    USER_MID2,
-    enveloped,
-    route,
 )
 
 
@@ -47,7 +46,8 @@ class TestProfile:
         assert last_request(api) == [int(SyncReason.INITIALIZATION)]
         # URL is the Talk gateway path.
         assert api.transport.session.last["url"].endswith(
-            "/api/talk/thrift/Talk/TalkService/getProfile")
+            "/api/talk/thrift/Talk/TalkService/getProfile"
+        )
 
     def test_get_profile_custom_sync_reason(self, make_api, last_request):
         """A caller-supplied sync_reason is forwarded verbatim."""
@@ -81,16 +81,17 @@ class TestProfile:
         api.update_profile_attributes({int(ProfileAttribute.STATUS_MESSAGE): "yo"})
         seq, request = last_request(api)
         assert isinstance(seq, int)
-        assert request == {"profileAttributes": {
-            "16": {"value": "yo", "meta": {}}}}
+        assert request == {"profileAttributes": {"16": {"value": "yo", "meta": {}}}}
 
     def test_update_profile_attributes_multiple_keys(self, make_api, last_request):
         """All attribute keys are stringified and carried through."""
         api = make_api(route({"updateProfileAttributes": {}}))
-        api.update_profile_attributes({
-            int(ProfileAttribute.DISPLAY_NAME): "Name",
-            int(ProfileAttribute.STATUS_MESSAGE): "Status",
-        })
+        api.update_profile_attributes(
+            {
+                int(ProfileAttribute.DISPLAY_NAME): "Name",
+                int(ProfileAttribute.STATUS_MESSAGE): "Status",
+            }
+        )
         _seq, request = last_request(api)
         attrs = request["profileAttributes"]
         assert attrs["2"] == {"value": "Name", "meta": {}}
@@ -99,8 +100,7 @@ class TestProfile:
     def test_update_profile_attributes_explicit_seq(self, make_api, last_request):
         """An explicit req_seq is used instead of the auto-generated one."""
         api = make_api(route({"updateProfileAttributes": {}}))
-        api.update_profile_attributes(
-            {int(ProfileAttribute.DISPLAY_NAME): "X"}, req_seq=4242)
+        api.update_profile_attributes({int(ProfileAttribute.DISPLAY_NAME): "X"}, req_seq=4242)
         seq, _request = last_request(api)
         assert seq == 4242
 
@@ -109,16 +109,14 @@ class TestProfile:
         api = make_api(route({"updateProfileAttributes": {}}))
         api.set_display_name("Alice")
         _seq, request = last_request(api)
-        assert request == {"profileAttributes": {
-            "2": {"value": "Alice", "meta": {}}}}
+        assert request == {"profileAttributes": {"2": {"value": "Alice", "meta": {}}}}
 
     def test_set_status_message_uses_attribute_16(self, make_api, last_request):
         """set_status_message maps to ProfileAttribute.STATUS_MESSAGE ('16')."""
         api = make_api(route({"updateProfileAttributes": {}}))
         api.set_status_message("busy")
         _seq, request = last_request(api)
-        assert request == {"profileAttributes": {
-            "16": {"value": "busy", "meta": {}}}}
+        assert request == {"profileAttributes": {"16": {"value": "busy", "meta": {}}}}
 
 
 # ---------------------------------------------------------------------------
@@ -140,10 +138,12 @@ class TestSettings:
     def test_get_settings_attributes2_wraps_ids_in_list(self, make_api, last_request):
         """getSettingsAttributes2 -> [[id, id, ...]] (a list wrapped in a list)."""
         api = make_api(route({"getSettingsAttributes2": {}}))
-        api.get_settings_attributes2([
-            SettingsAttribute.NOTIFICATION_ENABLE,
-            SettingsAttribute.E2EE_ENABLE,
-        ])
+        api.get_settings_attributes2(
+            [
+                SettingsAttribute.NOTIFICATION_ENABLE,
+                SettingsAttribute.E2EE_ENABLE,
+            ]
+        )
         assert last_request(api) == [[0, 33]]
 
     def test_get_settings_attributes2_coerces_to_int(self, make_api, last_request):
@@ -156,8 +156,8 @@ class TestSettings:
         """updateSettingsAttributes2 -> [seq, [ids], settings]."""
         api = make_api(route({"updateSettingsAttributes2": {}}))
         api.update_settings_attributes2(
-            [SettingsAttribute.NOTIFICATION_ENABLE],
-            {"notificationEnable": "true"})
+            [SettingsAttribute.NOTIFICATION_ENABLE], {"notificationEnable": "true"}
+        )
         seq, ids, settings = last_request(api)
         assert isinstance(seq, int)
         assert ids == [0]
@@ -166,7 +166,8 @@ class TestSettings:
     def test_update_settings_attributes2_explicit_seq(self, make_api, last_request):
         api = make_api(route({"updateSettingsAttributes2": {}}))
         api.update_settings_attributes2(
-            [SettingsAttribute.E2EE_ENABLE], {"e2eeEnable": "true"}, req_seq=77)
+            [SettingsAttribute.E2EE_ENABLE], {"e2eeEnable": "true"}, req_seq=77
+        )
         seq, ids, settings = last_request(api)
         assert seq == 77
         assert ids == [33]
@@ -176,8 +177,7 @@ class TestSettings:
         """getConfigurations -> ['', '', '', region, '', syncReason]."""
         api = make_api(route({"getConfigurations": {}}))
         api.get_configurations()
-        assert last_request(api) == [
-            "", "", "", "", "", int(SyncReason.INITIALIZATION)]
+        assert last_request(api) == ["", "", "", "", "", int(SyncReason.INITIALIZATION)]
 
     def test_get_configurations_custom_region_and_reason(self, make_api, last_request):
         """The region lands in slot 3 and the sync reason in the last slot."""
@@ -205,7 +205,8 @@ class TestReportAbuse:
         api.report_abuse(
             report_source=int(ReportSource.GROUP_CHAT),
             spammer_reason=int(SpammerReason.SCAM),
-            metadata={"groupMid": GROUP_MID})
+            metadata={"groupMid": GROUP_MID},
+        )
         (entry,) = last_request(api)
         message = entry["abuseReportEntry"]["message"]
         assert message["reportSource"] == int(ReportSource.GROUP_CHAT)
@@ -219,7 +220,8 @@ class TestReportAbuse:
         api.report_abuse(
             report_source=int(ReportSource.DIRECT_CHAT),
             spammer_reason=int(SpammerReason.ADVERTISING),
-            metadata={})
+            metadata={},
+        )
         (entry,) = last_request(api)
         message = entry["abuseReportEntry"]["message"]
         assert message["applicationType"] == int(ApplicationType.CHROMEOS)
@@ -232,7 +234,8 @@ class TestReportAbuse:
             spammer_reason=int(SpammerReason.HARASSMENT),
             metadata={"k": "v"},
             abuse_messages=[{"id": "1"}],
-            application_type=int(ApplicationType.ANDROID))
+            application_type=int(ApplicationType.ANDROID),
+        )
         (entry,) = last_request(api)
         message = entry["abuseReportEntry"]["message"]
         assert message["applicationType"] == int(ApplicationType.ANDROID)
@@ -269,7 +272,8 @@ class TestE2EE:
             GROUP_MID,
             members=[USER_MID, USER_MID2],
             key_ids=[1, 2],
-            encrypted_shared_keys=["encA", "encB"])
+            encrypted_shared_keys=["encA", "encB"],
+        )
         version, chat_mid, members, key_ids, enc_keys = last_request(api)
         assert version == 1
         assert chat_mid == GROUP_MID
@@ -285,8 +289,9 @@ class TestE2EE:
             members=(m for m in [USER_MID]),
             key_ids=(k for k in ["3", "4"]),
             encrypted_shared_keys=(e for e in ["enc"]),
-            version=2)
-        version, chat_mid, members, key_ids, enc_keys = last_request(api)
+            version=2,
+        )
+        version, _chat_mid, members, key_ids, enc_keys = last_request(api)
         assert version == 2
         assert members == [USER_MID]
         assert key_ids == [3, 4]
@@ -299,22 +304,19 @@ class TestE2EE:
 class TestChannelToken:
     def test_issue_channel_token_default_channel(self, make_api, last_request):
         """issueChannelToken posts the hard-coded Timeline channel id."""
-        api = make_api(route(
-            {"issueChannelToken": {"channelAccessToken": "CHTOK"}}))
+        api = make_api(route({"issueChannelToken": {"channelAccessToken": "CHTOK"}}))
         result = api.issue_channel_token()
         assert result == {"channelAccessToken": "CHTOK"}
         assert last_request(api) == ["1341209850"]
 
     def test_issue_channel_token_custom_channel(self, make_api, last_request):
-        api = make_api(route(
-            {"issueChannelToken": {"channelAccessToken": "CHTOK"}}))
+        api = make_api(route({"issueChannelToken": {"channelAccessToken": "CHTOK"}}))
         api.issue_channel_token("999")
         assert last_request(api) == ["999"]
 
     def test_issue_channel_token_caches_access_token(self, make_api):
         """The returned channelAccessToken is cached on the token store."""
-        api = make_api(route(
-            {"issueChannelToken": {"channelAccessToken": "CACHED"}}))
+        api = make_api(route({"issueChannelToken": {"channelAccessToken": "CACHED"}}))
         assert api.transport.tokens.channel_access_token is None
         api.issue_channel_token()
         assert api.transport.tokens.channel_access_token == "CACHED"
@@ -327,10 +329,14 @@ class TestChannelToken:
 
     def test_cached_channel_token_sent_as_header_on_next_call(self, make_api):
         """Once cached, subsequent requests carry X-Line-ChannelToken."""
-        api = make_api(route({
-            "issueChannelToken": {"channelAccessToken": "CHTOK"},
-            "getServerTime": 1,
-        }))
+        api = make_api(
+            route(
+                {
+                    "issueChannelToken": {"channelAccessToken": "CHTOK"},
+                    "getServerTime": 1,
+                }
+            )
+        )
         api.issue_channel_token()
         api.get_server_time()
         assert api.transport.session.last["headers"]["X-Line-ChannelToken"] == "CHTOK"
@@ -348,8 +354,9 @@ class TestChannelToken:
 class TestShop:
     def test_get_owned_product_summaries_defaults(self, make_api, last_request):
         """getOwnedProductSummaries -> [shopId, offset, limit, {language,country}]."""
-        api = make_api(route(
-            {"getOwnedProductSummaries": {"productList": [], "totalSize": 0}}))
+        api = make_api(
+            route({"getOwnedProductSummaries": {"productList": [], "totalSize": 0}})
+        )
         result = api.get_owned_product_summaries()
         assert result == {"productList": [], "totalSize": 0}
         shop_id, offset, limit, display = last_request(api)
@@ -363,12 +370,14 @@ class TestShop:
         api = make_api(route({"getOwnedProductSummaries": {}}))
         api.get_owned_product_summaries()
         assert api.transport.session.last["url"].endswith(
-            "/api/shop/thrift/ShopService/ShopService/getOwnedProductSummaries")
+            "/api/shop/thrift/ShopService/ShopService/getOwnedProductSummaries"
+        )
 
     def test_get_owned_product_summaries_custom_args(self, make_api, last_request):
         api = make_api(route({"getOwnedProductSummaries": {}}))
         api.get_owned_product_summaries(
-            "sticonshop", offset=10, limit=50, language="th", country="TH")
+            "sticonshop", offset=10, limit=50, language="th", country="TH"
+        )
         shop_id, offset, limit, display = last_request(api)
         assert shop_id == "sticonshop"
         assert offset == 10
@@ -377,10 +386,12 @@ class TestShop:
 
     def test_iter_owned_products_pages_then_stops(self, make_api):
         """iter_owned_products yields each product and stops at totalSize."""
-        pages = iter([
-            {"productList": [{"id": "a"}, {"id": "b"}], "totalSize": 3},
-            {"productList": [{"id": "c"}], "totalSize": 3},
-        ])
+        pages = iter(
+            [
+                {"productList": [{"id": "a"}, {"id": "b"}], "totalSize": 3},
+                {"productList": [{"id": "c"}], "totalSize": 3},
+            ]
+        )
 
         def responder(method, url, kw):
             return enveloped(next(pages))
@@ -391,8 +402,9 @@ class TestShop:
 
     def test_iter_owned_products_empty_first_page(self, make_api):
         """An empty first page terminates iteration immediately."""
-        api = make_api(route(
-            {"getOwnedProductSummaries": {"productList": [], "totalSize": 0}}))
+        api = make_api(
+            route({"getOwnedProductSummaries": {"productList": [], "totalSize": 0}})
+        )
         assert list(api.iter_owned_products()) == []
 
     def test_preview_customized_image_text_shape(self, make_api, last_request):

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Optional
 
 try:
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -31,13 +30,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 class RSAKeyInfo:
     """Result of ``Talk.TalkService.getRSAKeyInfo``."""
 
-    keynm: str       # key name -> goes into LoginRequest.identifier
-    nvalue: str      # RSA modulus, hex
-    evalue: str      # RSA public exponent, hex
+    keynm: str  # key name -> goes into LoginRequest.identifier
+    nvalue: str  # RSA modulus, hex
+    evalue: str  # RSA public exponent, hex
     sessionKey: str  # per-login session key, prefixes the plaintext
 
     @classmethod
-    def from_response(cls, data: dict) -> "RSAKeyInfo":
+    def from_response(cls, data: dict) -> RSAKeyInfo:
         return cls(
             keynm=data["keynm"],
             nvalue=data["nvalue"],
@@ -54,9 +53,12 @@ def _len_prefix(s: str) -> str:
 def build_login_plaintext(session_key: str, identifier: str, password: str) -> bytes:
     """Assemble and UTF-8 encode the cleartext blob fed to RSA."""
     blob = (
-        _len_prefix(session_key) + session_key
-        + _len_prefix(identifier) + identifier
-        + _len_prefix(password) + password
+        _len_prefix(session_key)
+        + session_key
+        + _len_prefix(identifier)
+        + identifier
+        + _len_prefix(password)
+        + password
     )
     return blob.encode("utf-8")
 
@@ -81,4 +83,5 @@ def sha256(data: bytes) -> bytes:
 def gen_uuid_hex() -> str:
     """A random 32-char hex id, matching the extension's UUID-without-dashes."""
     import uuid
+
     return uuid.uuid4().hex

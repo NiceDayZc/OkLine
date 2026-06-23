@@ -12,21 +12,21 @@ terminal.
 
 from __future__ import annotations
 
-from typing import List, Optional
 
-
-def qr_matrix(data: str, *, border: int = 2,
-              error_correction: str = "M") -> List[List[bool]]:
+def qr_matrix(data: str, *, border: int = 2, error_correction: str = "M") -> list[list[bool]]:
     """Return the QR module matrix (``True`` = dark module) including border."""
     try:
         import qrcode
         import qrcode.constants as C
     except ModuleNotFoundError as exc:  # pragma: no cover
         raise ModuleNotFoundError(
-            "QR rendering needs the 'qrcode' package: pip install qrcode") from exc
+            "QR rendering needs the 'qrcode' package: pip install qrcode"
+        ) from exc
     ec = {
-        "L": C.ERROR_CORRECT_L, "M": C.ERROR_CORRECT_M,
-        "Q": C.ERROR_CORRECT_Q, "H": C.ERROR_CORRECT_H,
+        "L": C.ERROR_CORRECT_L,
+        "M": C.ERROR_CORRECT_M,
+        "Q": C.ERROR_CORRECT_Q,
+        "H": C.ERROR_CORRECT_H,
     }.get(error_correction.upper(), C.ERROR_CORRECT_M)
     qr = qrcode.QRCode(border=border, error_correction=ec)
     qr.add_data(data)
@@ -34,8 +34,9 @@ def qr_matrix(data: str, *, border: int = 2,
     return qr.get_matrix()
 
 
-def qr_to_ascii(data: str, *, border: int = 2, invert: bool = False,
-                style: str = "half") -> str:
+def qr_to_ascii(
+    data: str, *, border: int = 2, invert: bool = False, style: str = "half"
+) -> str:
     """Return a string that draws ``data`` as a QR code.
 
     ``style``:
@@ -57,10 +58,10 @@ def qr_to_ascii(data: str, *, border: int = 2, invert: bool = False,
 
     # half-block style: pair up rows
     HALF = {
-        (True, True): "█",   # full block
+        (True, True): "█",  # full block
         (True, False): "▀",  # upper half
         (False, True): "▄",  # lower half
-        (False, False): " ",      # space
+        (False, False): " ",  # space
     }
     rows = matrix
     lines = []
@@ -72,8 +73,9 @@ def qr_to_ascii(data: str, *, border: int = 2, invert: bool = False,
     return "\n".join(lines)
 
 
-def print_qr(data: str, *, border: int = 2, invert: bool = False,
-             style: str = "half", out=None) -> None:
+def print_qr(
+    data: str, *, border: int = 2, invert: bool = False, style: str = "half", out=None
+) -> None:
     """Print ``data`` as a QR code to ``out`` (default stdout).
 
     Reconfigures stdout to UTF-8 on Windows so the block glyphs render instead
@@ -81,15 +83,16 @@ def print_qr(data: str, *, border: int = 2, invert: bool = False,
     style if that is not possible.
     """
     import sys
+
+    from ._util import reconfigure_stdout_utf8
+
     stream = out or sys.stdout
-    try:  # Python 3.7+: make sure the block chars can be written
-        stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    reconfigure_stdout_utf8(stream)  # make sure the block chars can be written
     text = qr_to_ascii(data, border=border, invert=invert, style=style)
     try:
         print(text, file=stream, flush=True)
     except UnicodeEncodeError:  # pragma: no cover - last-resort fallback
-        ascii_text = (qr_to_ascii(data, border=border, invert=invert, style="full")
-                      .replace("█", "#"))
+        ascii_text = qr_to_ascii(data, border=border, invert=invert, style="full").replace(
+            "█", "#"
+        )
         print(ascii_text, file=stream, flush=True)

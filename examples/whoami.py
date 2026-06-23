@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """whoami — print your LINE profile and a few account stats.
 
-    python examples/whoami.py
+python examples/whoami.py
 """
+
 from __future__ import annotations
 
 import argparse

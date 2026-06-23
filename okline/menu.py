@@ -7,17 +7,17 @@ to memorise.  On first use it offers to log in by QR and saves the session.
 
 from __future__ import annotations
 
-import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from . import ui
+from ._util import reconfigure_stdout_utf8
 
 
-def _names(api: Any) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def _names(api: Any) -> dict[str, str]:
+    out: dict[str, str] = {}
     ids = api.get_all_contact_ids() or []
     for i in range(0, len(ids), 100):
-        res = api.get_contacts(ids[i:i + 100])
+        res = api.get_contacts(ids[i : i + 100])
         for mid, w in (res.get("contacts", {}) or {}).items():
             c = w.get("contact", w) if isinstance(w, dict) else {}
             out[mid] = c.get("displayNameOverridden") or c.get("displayName") or ""
@@ -25,17 +25,25 @@ def _names(api: Any) -> Dict[str, str]:
 
 
 # -- session ----------------------------------------------------------------
-def _qr_login(path: str) -> Optional[Any]:
+def _qr_login(path: str) -> Any | None:
     from .client import OkLine
     from .hmac_signer import LtsmBridge
     from .qrterm import print_qr
+
     if not LtsmBridge.is_available():
-        print(ui.warn("  Node.js 18+ is required to sign requests (X-Hmac).") + "\n"
-              + ui.dim("  Install from https://nodejs.org, run `node --version`, then retry."))
+        print(
+            ui.warn("  Node.js 18+ is required to sign requests (X-Hmac).")
+            + "\n"
+            + ui.dim("  Install from https://nodejs.org, run `node --version`, then retry.")
+        )
         return None
     api = OkLine(record=False)
-    print("\n" + ui.title("Scan this QR with the LINE app")
-          + ui.dim("  (Settings › Add friends › QR code)") + "\n")
+    print(
+        "\n"
+        + ui.title("Scan this QR with the LINE app")
+        + ui.dim("  (Settings › Add friends › QR code)")
+        + "\n"
+    )
 
     def on_qr(url: str) -> None:
         try:
@@ -47,25 +55,33 @@ def _qr_login(path: str) -> Optional[Any]:
         res = api.auth.qr_login(
             on_qr=on_qr,
             on_pin=lambda pin: print(
-                "\n" + ui.accent(f"  {ui.GLYPH['arrow']}  Confirm this PIN: {pin}") + "\n"))
-    except Exception as exc:  # noqa: BLE001
-        print(ui.warn(f"login failed: {exc}")); api.close(); return None
+                "\n" + ui.accent(f"  {ui.GLYPH['arrow']}  Confirm this PIN: {pin}") + "\n"
+            ),
+        )
+    except Exception as exc:
+        print(ui.warn(f"login failed: {exc}"))
+        api.close()
+        return None
     if not res.access_token:
-        print(ui.warn("login did not complete.")); api.close(); return None
+        print(ui.warn("login did not complete."))
+        api.close()
+        return None
     info = getattr(api.auth, "last_e2ee_login", None)
     if info:
         try:
             api.e2ee.load_from_login(info["curve_key_id"], info["metadata"])
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     api.save_tokens(path)
     print(ui.ok(f"Logged in — session saved to {path}.") + "\n")
     return api
 
 
-def _ensure_session(args: Any) -> Optional[Any]:
+def _ensure_session(args: Any) -> Any | None:
     import os
+
     from .__main__ import _make_client
+
     api = _make_client(args)
     if api.tokens.access_token:
         return api
@@ -73,6 +89,7 @@ def _ensure_session(args: Any) -> Optional[Any]:
     path = getattr(args, "tokens_file", None) or "tokens.json"
     if os.path.exists(path):
         from .client import OkLine
+
         return OkLine.from_tokens_file(path)
     # no session yet — go straight to QR login (that is the whole point)
     print(ui.dim("  No saved session — starting QR login…\n"))
@@ -86,18 +103,23 @@ def _ensure_session(args: Any) -> Optional[Any]:
 def act_whoami(api: Any) -> None:
     p = api.get_profile()
     chats = api.get_all_chat_mids() or {}
-    ui.table([
-        [ui.dim("name"), p.get("displayName") or ""],
-        [ui.dim("mid"), p.get("mid") or ""],
-        [ui.dim("user id"), p.get("userid") or ""],
-        [ui.dim("status"), p.get("statusMessage") or ""],
-        [ui.dim("contacts"), str(len(api.get_all_contact_ids() or []))],
-        [ui.dim("groups"), f"{len(chats.get('memberChatMids', []))}"
-         f" (+{len(chats.get('invitedChatMids', []))} invited)"],
-        [ui.dim("favorites"), str(len(api.get_favorite_mids() or []))],
-        [ui.dim("blocked"), str(len(api.get_blocked_contact_ids() or []))],
-        [ui.dim("e2ee"), ui.accent("ready") if api.e2ee.is_ready() else ui.dim("off")],
-    ])
+    ui.table(
+        [
+            [ui.dim("name"), p.get("displayName") or ""],
+            [ui.dim("mid"), p.get("mid") or ""],
+            [ui.dim("user id"), p.get("userid") or ""],
+            [ui.dim("status"), p.get("statusMessage") or ""],
+            [ui.dim("contacts"), str(len(api.get_all_contact_ids() or []))],
+            [
+                ui.dim("groups"),
+                f"{len(chats.get('memberChatMids', []))}"
+                f" (+{len(chats.get('invitedChatMids', []))} invited)",
+            ],
+            [ui.dim("favorites"), str(len(api.get_favorite_mids() or []))],
+            [ui.dim("blocked"), str(len(api.get_blocked_contact_ids() or []))],
+            [ui.dim("e2ee"), ui.accent("ready") if api.e2ee.is_ready() else ui.dim("off")],
+        ]
+    )
 
 
 def act_contacts(api: Any) -> None:
@@ -117,7 +139,7 @@ def act_find(api: Any) -> None:
     ui.table([[ui.dim(m), n] for m, n in hits])
 
 
-def _resolve_to(api: Any, to: str) -> Optional[str]:
+def _resolve_to(api: Any, to: str) -> str | None:
     """A mid, or a (unique) contact-name match -> its mid."""
     if not to:
         return None
@@ -130,8 +152,9 @@ def _resolve_to(api: Any, to: str) -> Optional[str]:
     if not matches:
         print(ui.warn(f"  no contact matching {to!r}"))
     else:
-        print(ui.warn(f"  {len(matches)} match {to!r}: ")
-              + ", ".join(n for _, n in matches[:8]))
+        print(
+            ui.warn(f"  {len(matches)} match {to!r}: ") + ", ".join(n for _, n in matches[:8])
+        )
     return None
 
 
@@ -149,11 +172,15 @@ def act_send(api: Any) -> None:
 
 def act_groups(api: Any) -> None:
     from .entities import Group
+
     chats = api.get_all_chat_mids() or {}
     member = chats.get("memberChatMids", [])
-    print(ui.dim(f"  member {len(member)}   invited {len(chats.get('invitedChatMids', []))}") + "\n")
+    print(
+        ui.dim(f"  member {len(member)}   invited {len(chats.get('invitedChatMids', []))}")
+        + "\n"
+    )
     rows = []
-    for g in (api.get_chats(member).get("chats", []) if member else []):
+    for g in api.get_chats(member).get("chats", []) if member else []:
         grp = Group.from_dict(g)
         rows.append([ui.dim(grp.chat_mid), f"({grp.member_count})", grp.name])
     ui.table(rows)
@@ -161,17 +188,19 @@ def act_groups(api: Any) -> None:
 
 def act_members(api: Any) -> None:
     from .entities import Group
+
     gid = ui.prompt("group mid")
     if not gid:
         return
     chats = api.get_chats([gid]).get("chats", [])
     if not chats:
-        print(ui.warn("  group not found")); return
+        print(ui.warn("  group not found"))
+        return
     grp = Group.from_dict(chats[0])
     print(ui.title(f"  {grp.name}") + ui.dim(f"  ({grp.member_count} members)") + "\n")
-    names: Dict[str, str] = {}
+    names: dict[str, str] = {}
     for i in range(0, len(grp.member_mids), 100):
-        res = api.get_contacts(grp.member_mids[i:i + 100])
+        res = api.get_contacts(grp.member_mids[i : i + 100])
         for mid, w in (res.get("contacts", {}) or {}).items():
             c = w.get("contact", w) if isinstance(w, dict) else {}
             names[mid] = c.get("displayNameOverridden") or c.get("displayName") or ""
@@ -193,7 +222,7 @@ def act_chatlog(api: Any) -> None:
             if api.e2ee.is_ready():
                 try:
                     text = api.decrypt_message(m).get("text")
-                except Exception:  # noqa: BLE001
+                except Exception:
                     text = ui.dim("[encrypted]")
             else:
                 text = ui.dim("[encrypted — log in to load keys]")
@@ -207,50 +236,65 @@ def act_search(api: Any) -> None:
         return
     c = api.find_contact_by_userid(uid) or {}
     if not isinstance(c, dict) or not c.get("mid"):
-        print(ui.warn("  not found")); return
-    ui.table([[ui.dim("mid"), c.get("mid")],
-              [ui.dim("name"), c.get("displayName")],
-              [ui.dim("status"), c.get("statusMessage") or ""]])
+        print(ui.warn("  not found"))
+        return
+    ui.table(
+        [
+            [ui.dim("mid"), c.get("mid") or ""],
+            [ui.dim("name"), c.get("displayName") or ""],
+            [ui.dim("status"), c.get("statusMessage") or ""],
+        ]
+    )
     if ui.prompt("add as friend?", "n").lower() in ("y", "yes"):
-        api.add_friend_by_mid(c["mid"]); print(ui.ok("added"))
+        api.add_friend_by_mid(c["mid"])
+        print(ui.ok("added"))
 
 
 def act_block(api: Any) -> None:
     sub = ui.prompt("(l)ist / (b)lock / (u)nblock", "l").lower()[:1]
     if sub == "l":
         names = _names(api)
-        ui.table([[ui.dim(m), names.get(m, "")] for m in (api.get_blocked_contact_ids() or [])])
+        ui.table(
+            [[ui.dim(m), names.get(m, "")] for m in (api.get_blocked_contact_ids() or [])]
+        )
     elif sub == "b":
         mid = ui.prompt("mid to block")
         if mid:
-            api.block_contact(mid); print(ui.ok("blocked"))
+            api.block_contact(mid)
+            print(ui.ok("blocked"))
     elif sub == "u":
         mid = ui.prompt("mid to unblock")
         if mid:
-            api.unblock_contact(mid); print(ui.ok("unblocked"))
+            api.unblock_contact(mid)
+            print(ui.ok("unblocked"))
 
 
 def act_react(api: Any) -> None:
     from .enums import PredefinedReactionType
+
     mid = ui.prompt("message id")
     if not mid:
         return
     if ui.prompt("(r)eact / (u)nsend", "r").lower()[:1] == "u":
-        api.unsend_message(mid); print(ui.ok("unsent")); return
+        api.unsend_message(mid)
+        print(ui.ok("unsent"))
+        return
     r = ui.prompt("reaction NICE/LOVE/FUN/AMAZING/SAD/OMG", "NICE").upper()
     try:
-        api.react(mid, int(PredefinedReactionType[r])); print(ui.ok("reacted"))
+        api.react(mid, int(PredefinedReactionType[r]))
+        print(ui.ok("reacted"))
     except KeyError:
         print(ui.warn("  unknown reaction"))
 
 
 def act_watch(api: Any) -> None:
     from .bot import Bot
+
     echo = ui.prompt("echo replies?", "n").lower() in ("y", "yes")
     bot = Bot(api)
 
     @bot.on_message
-    def _on(ctx):  # noqa: ANN001
+    def _on(ctx):
         where = "group" if ctx.is_group else "dm"
         print(f"  {ui.dim('[' + where + ']')} {ui.dim(ctx.sender)}: {ctx.text!r}")
         if echo and ctx.text:
@@ -269,13 +313,16 @@ def act_setprofile(api: Any) -> None:
     if not val:
         return
     if what == "s":
-        api.set_status_message(val); print(ui.ok("status updated"))
+        api.set_status_message(val)
+        print(ui.ok("status updated"))
     else:
-        api.set_display_name(val); print(ui.ok("name updated"))
+        api.set_display_name(val)
+        print(ui.ok("name updated"))
 
 
 def act_backup(api: Any) -> None:
     import json
+
     cid = ui.prompt("chat mid")
     if not cid:
         return
@@ -287,7 +334,7 @@ def act_backup(api: Any) -> None:
 
 
 # -- menu loop --------------------------------------------------------------
-MENU: List[Tuple[str, Optional[Callable[[Any], None]]]] = [
+MENU: list[tuple[str, Callable[[Any], None] | None]] = [
     ("Who am I  ·  stats", act_whoami),
     ("Contacts  ·  list / search", act_contacts),
     ("Find a contact by name", act_find),
@@ -307,7 +354,7 @@ MENU: List[Tuple[str, Optional[Callable[[Any], None]]]] = [
 def _menu_loop(api: Any) -> None:
     try:
         p = api.get_profile() or {}
-    except Exception:  # noqa: BLE001
+    except Exception:
         p = {}
     name = p.get("displayName") or "?"
     mid = p.get("mid") or ""
@@ -337,17 +384,14 @@ def _menu_loop(api: Any) -> None:
                 action(api)
         except KeyboardInterrupt:
             print(ui.dim("  cancelled"))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(ui.warn(f"  error: {exc}"))
         ui.pause()
 
 
 def interactive(args: Any) -> int:
     """Entry point for ``okline`` / ``okline menu``."""
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    reconfigure_stdout_utf8()
     api = _ensure_session(args)
     if api is None:
         print(ui.dim("no session — bye."))

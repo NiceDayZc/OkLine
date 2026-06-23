@@ -6,6 +6,7 @@ Run this once; the other tools then reuse the saved session (no re-scan).
     python examples/login.py                 # -> tokens.json
     python examples/login.py -o my.json      # save somewhere else
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,11 +17,15 @@ from _common import interactive_login
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("-o", "--output", default="tokens.json",
-                   help="where to save the session (default tokens.json)")
+    p.add_argument(
+        "-o",
+        "--output",
+        default="tokens.json",
+        help="where to save the session (default tokens.json)",
+    )
     args = p.parse_args()
     try:
-        sys.stdout.reconfigure(encoding="utf-8")   # QR blocks / Thai on Windows
+        sys.stdout.reconfigure(encoding="utf-8")  # QR blocks / Thai on Windows
     except Exception:
         pass
     api = interactive_login(args.output)

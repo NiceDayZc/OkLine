@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Iterable, List, Sequence
+from collections.abc import Iterable, Sequence
+
+from ._util import reconfigure_stdout_utf8
 
 
 def _enable_windows_vt() -> None:
@@ -18,6 +20,7 @@ def _enable_windows_vt() -> None:
         return
     try:  # turn on ANSI escape processing on Windows 10+ consoles
         import ctypes
+
         k = ctypes.windll.kernel32
         k.SetConsoleMode(k.GetStdHandle(-11), 7)
     except Exception:  # pragma: no cover
@@ -25,14 +28,11 @@ def _enable_windows_vt() -> None:
 
 
 _enable_windows_vt()
-
-try:  # box-drawing glyphs + Thai + emoji regardless of the OS code page
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover
-    pass
+reconfigure_stdout_utf8()  # box-drawing glyphs + Thai + emoji on any code page
 
 ENABLED = (
-    hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    hasattr(sys.stdout, "isatty")
+    and sys.stdout.isatty()
     and os.environ.get("NO_COLOR") is None
     and os.environ.get("TERM") != "dumb"
 )
@@ -40,21 +40,37 @@ ENABLED = (
 # Can we safely print Unicode box-drawing glyphs? (else fall back to ASCII)
 _UNICODE = "utf" in (getattr(sys.stdout, "encoding", "") or "").lower()
 if _UNICODE:
-    _BOX = {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯",
-            "h": "─", "v": "│", "ml": "├", "mr": "┤"}
+    _BOX = {
+        "tl": "╭",
+        "tr": "╮",
+        "bl": "╰",
+        "br": "╯",
+        "h": "─",
+        "v": "│",
+        "ml": "├",
+        "mr": "┤",
+    }
     GLYPH = {"arrow": "›", "check": "✓", "bullet": "•", "ell": "…"}
 else:
-    _BOX = {"tl": "+", "tr": "+", "bl": "+", "br": "+",
-            "h": "-", "v": "|", "ml": "+", "mr": "+"}
+    _BOX = {
+        "tl": "+",
+        "tr": "+",
+        "bl": "+",
+        "br": "+",
+        "h": "-",
+        "v": "|",
+        "ml": "+",
+        "mr": "+",
+    }
     GLYPH = {"arrow": ">", "check": "*", "bullet": "*", "ell": "..."}
 
 # muted 256-colour palette — easy on the eyes
 _C = {
-    "title": "38;5;110",   # soft slate blue
+    "title": "38;5;110",  # soft slate blue
     "accent": "38;5;108",  # sage green
-    "key": "38;5;152",     # pale cyan (menu numbers)
-    "dim": "38;5;245",     # grey
-    "warn": "38;5;179",    # soft amber
+    "key": "38;5;152",  # pale cyan (menu numbers)
+    "dim": "38;5;245",  # grey
+    "warn": "38;5;179",  # soft amber
     "border": "38;5;240",  # dark grey
 }
 
@@ -63,12 +79,28 @@ def _wrap(s: str, code: str) -> str:
     return f"\033[{code}m{s}\033[0m" if ENABLED else s
 
 
-def title(s: str) -> str:  return _wrap(s, _C["title"])
-def accent(s: str) -> str: return _wrap(s, _C["accent"])
-def key(s: str) -> str:    return _wrap(s, _C["key"])
-def dim(s: str) -> str:    return _wrap(s, _C["dim"])
-def warn(s: str) -> str:   return _wrap(s, _C["warn"])
-def bold(s: str) -> str:   return _wrap(s, "1")
+def title(s: str) -> str:
+    return _wrap(s, _C["title"])
+
+
+def accent(s: str) -> str:
+    return _wrap(s, _C["accent"])
+
+
+def key(s: str) -> str:
+    return _wrap(s, _C["key"])
+
+
+def dim(s: str) -> str:
+    return _wrap(s, _C["dim"])
+
+
+def warn(s: str) -> str:
+    return _wrap(s, _C["warn"])
+
+
+def bold(s: str) -> str:
+    return _wrap(s, "1")
 
 
 def clear() -> None:
@@ -79,7 +111,7 @@ def clear() -> None:
         print()
 
 
-_W = 60   # content width
+_W = 60  # content width
 
 
 def _border(s: str) -> str:
@@ -159,7 +191,7 @@ def pause() -> None:
         pass
 
 
-def screen(heading: str, lines: List[str] | None = None) -> None:
+def screen(heading: str, lines: list[str] | None = None) -> None:
     """Clear and draw a titled screen header."""
     clear()
     print()
@@ -167,5 +199,9 @@ def screen(heading: str, lines: List[str] | None = None) -> None:
     print()
 
 
-def ok(s: str) -> str:   return accent(GLYPH["check"] + " ") + s
-def info(s: str) -> str: return dim(GLYPH["bullet"] + " ") + s
+def ok(s: str) -> str:
+    return accent(GLYPH["check"] + " ") + s
+
+
+def info(s: str) -> str:
+    return dim(GLYPH["bullet"] + " ") + s

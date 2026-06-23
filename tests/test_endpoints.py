@@ -82,22 +82,26 @@ def test_thrift_endpoints_path_ends_with_method_name():
 @pytest.mark.parametrize(
     "key, expected_path",
     [
-        ("Talk.TalkService.getProfile",
-         "talk/thrift/Talk/TalkService/getProfile"),
-        ("Talk.TalkService.sendMessage",
-         "talk/thrift/Talk/TalkService/sendMessage"),
-        ("Talk.AuthService.loginV2",
-         "talk/thrift/Talk/AuthService/loginV2"),
-        ("Talk.ChannelService.issueChannelToken",
-         "talk/thrift/Talk/ChannelService/issueChannelToken"),
-        ("Relation.RelationService.addFriendByMid",
-         "talk/thrift/Relation/RelationService/addFriendByMid"),
-        ("ShopService.ShopService.getOwnedProductSummaries",
-         "shop/thrift/ShopService/ShopService/getOwnedProductSummaries"),
-        ("LoginQrCode.SecondaryQrCodeLoginService.createQrCode",
-         "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createQrCode"),
-        ("Talk.TalkService.getE2EEPublicKey",
-         "talk/thrift/Talk/TalkService/getE2EEPublicKey"),
+        ("Talk.TalkService.getProfile", "talk/thrift/Talk/TalkService/getProfile"),
+        ("Talk.TalkService.sendMessage", "talk/thrift/Talk/TalkService/sendMessage"),
+        ("Talk.AuthService.loginV2", "talk/thrift/Talk/AuthService/loginV2"),
+        (
+            "Talk.ChannelService.issueChannelToken",
+            "talk/thrift/Talk/ChannelService/issueChannelToken",
+        ),
+        (
+            "Relation.RelationService.addFriendByMid",
+            "talk/thrift/Relation/RelationService/addFriendByMid",
+        ),
+        (
+            "ShopService.ShopService.getOwnedProductSummaries",
+            "shop/thrift/ShopService/ShopService/getOwnedProductSummaries",
+        ),
+        (
+            "LoginQrCode.SecondaryQrCodeLoginService.createQrCode",
+            "talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createQrCode",
+        ),
+        ("Talk.TalkService.getE2EEPublicKey", "talk/thrift/Talk/TalkService/getE2EEPublicKey"),
     ],
 )
 def test_known_keys_map_to_expected_paths(key, expected_path):
@@ -228,9 +232,7 @@ def test_legy_base_urls():
     assert LEGY_BACKUP_BASE == "https://legy-backup.line-apps.com"
 
 
-@pytest.mark.parametrize(
-    "base", [GATEWAY_BASE, OBS_BASE, LEGY_BASE, LEGY_BACKUP_BASE]
-)
+@pytest.mark.parametrize("base", [GATEWAY_BASE, OBS_BASE, LEGY_BASE, LEGY_BACKUP_BASE])
 def test_base_urls_are_https_without_trailing_slash(base):
     """Every base URL is HTTPS and carries no trailing slash."""
     assert base.startswith("https://")
@@ -241,8 +243,7 @@ def test_gateway_plus_thrift_path_forms_full_url():
     """``GATEWAY_BASE`` + ``thrift_path`` yields the real POST target."""
     url = GATEWAY_BASE + thrift_path("Talk.TalkService.getProfile")
     assert url == (
-        "https://line-chrome-gw.line-apps.com"
-        "/api/talk/thrift/Talk/TalkService/getProfile"
+        "https://line-chrome-gw.line-apps.com/api/talk/thrift/Talk/TalkService/getProfile"
     )
 
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """find_contact — look up a friend's mid by (part of) their display name.
 
-    python examples/find_contact.py "Hardlyspeak"
+python examples/find_contact.py "Hardlyspeak"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,10 +18,11 @@ def main() -> None:
     api = load(args)
     try:
         q = args.query.lower()
-        hits = [(mid, name)
-                for mid, name in ((m, contact_name(w))
-                                  for m, w in all_contacts(api).items())
-                if q in name.lower()]
+        hits = [
+            (mid, name)
+            for mid, name in ((m, contact_name(w)) for m, w in all_contacts(api).items())
+            if q in name.lower()
+        ]
         if not hits:
             print(f"no contact matching {args.query!r}")
             return

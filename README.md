@@ -5,7 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/okline.svg)](https://pypi.org/project/okline/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-428%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-430%20passing-brightgreen.svg)](tests/)
 [![Endpoints](https://img.shields.io/badge/endpoints-77-blue.svg)](docs/ENDPOINTS.md)
 
 OkLine reproduces the API of the official **LINE Chrome extension** (`CHROMEOS`

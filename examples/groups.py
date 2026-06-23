@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """groups — list your groups, or leave / accept an invitation.
 
-    python examples/groups.py list
-    python examples/groups.py leave C1234567890abcdef
-    python examples/groups.py accept C1234567890abcdef
+python examples/groups.py list
+python examples/groups.py leave C1234567890abcdef
+python examples/groups.py accept C1234567890abcdef
 """
+
 from __future__ import annotations
 
 import argparse
 
-from okline import Group
-
 from _common import add_auth_args, load
+
+from okline import Group
 
 
 def main() -> None:
@@ -28,7 +29,7 @@ def main() -> None:
             print(f"member  : {len(members)}")
             print(f"invited : {len(invited)}\n")
             res = api.get_chats(members) if members else {}
-            for g in (res.get("chats", []) or []):
+            for g in res.get("chats", []) or []:
                 grp = Group.from_dict(g)
                 print(f"{grp.chat_mid}  {grp.name}  ({grp.member_count} members)")
         elif args.action == "leave":

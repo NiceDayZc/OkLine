@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """add_friend — add a friend by mid (U...) or by public LINE ID.
 
-    python examples/add_friend.py U0123456789abcdef0123456789abcdef
-    python examples/add_friend.py nb.vtg
+python examples/add_friend.py U0123456789abcdef0123456789abcdef
+python examples/add_friend.py nb.vtg
 """
+
 from __future__ import annotations
 
 import argparse

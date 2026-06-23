@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """watch — print incoming messages live (optionally echo them back).
 
-    python examples/watch.py            # just print incoming messages
-    python examples/watch.py --echo     # reply "you said: ..." (a tiny echo bot)
+python examples/watch.py            # just print incoming messages
+python examples/watch.py --echo     # reply "you said: ..." (a tiny echo bot)
 """
+
 from __future__ import annotations
 
 import argparse
 
-from okline import Bot
-
 from _common import add_auth_args, load
+
+from okline import Bot
 
 
 def main() -> None:

@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional
+from typing import Any
 
 from . import endpoints as ep
 from .transport import Transport
@@ -32,9 +33,9 @@ log = logging.getLogger("okline.ops")
 class SSEEvent:
     """One parsed Server-Sent-Event."""
 
-    event: str                       # "" / "ping" / "connInfoRevision" / ...
-    data: Any                        # decoded JSON if possible, else raw str
-    id: Optional[str] = None
+    event: str  # "" / "ping" / "connInfoRevision" / ...
+    data: Any  # decoded JSON if possible, else raw str
+    id: str | None = None
     raw: str = ""
 
 
@@ -42,18 +43,18 @@ class SSEEvent:
 class Operation:
     """A single talk operation (see :class:`okline.enums.OpType`)."""
 
-    revision: Optional[int] = None
-    type: Optional[int] = None
-    reqSeq: Optional[int] = None
-    checksum: Optional[str] = None
-    param1: Optional[str] = None
-    param2: Optional[str] = None
-    param3: Optional[str] = None
-    message: Optional[dict] = None
+    revision: int | None = None
+    type: int | None = None
+    reqSeq: int | None = None
+    checksum: str | None = None
+    param1: str | None = None
+    param2: str | None = None
+    param3: str | None = None
+    message: dict | None = None
     raw: dict = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Operation":
+    def from_dict(cls, d: dict) -> Operation:
         return cls(
             revision=d.get("revision"),
             type=d.get("type"),
@@ -103,7 +104,7 @@ class OperationReceiver:
             raise RuntimeError(f"SSE open failed: HTTP {resp.status_code}")
         event_name = ""
         data_lines: list[str] = []
-        last_id: Optional[str] = None
+        last_id: str | None = None
         try:
             for raw_line in resp.iter_lines(decode_unicode=True):
                 if raw_line is None:
@@ -113,8 +114,12 @@ class OperationReceiver:
                     # dispatch
                     if data_lines:
                         data_str = "\n".join(data_lines)
-                        yield SSEEvent(event_name or "message",
-                                       _maybe_json(data_str), id=last_id, raw=data_str)
+                        yield SSEEvent(
+                            event_name or "message",
+                            _maybe_json(data_str),
+                            id=last_id,
+                            raw=data_str,
+                        )
                     event_name, data_lines = "", []
                     continue
                 if line.startswith(":"):
@@ -147,8 +152,9 @@ class OperationReceiver:
                 yield Operation.from_dict(payload)
 
     # -- long-poll fallback --------------------------------------------------
-    def long_poll(self, session_id: str, *, endpoint: str = "LF1",
-                  timeout_ms: int = 180000) -> Any:
+    def long_poll(
+        self, session_id: str, *, endpoint: str = "LF1", timeout_ms: int = 180000
+    ) -> Any:
         """One blocking long-poll round-trip; returns the decoded body."""
         key = f"longpoll.{endpoint}"
         path = "/" + ep.SPECIAL_ENDPOINTS[key]

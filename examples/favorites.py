@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """favorites — list, add, or remove favorite chats.
 
-    python examples/favorites.py list
-    python examples/favorites.py add C1234567890abcdef
-    python examples/favorites.py remove C1234567890abcdef
+python examples/favorites.py list
+python examples/favorites.py add C1234567890abcdef
+python examples/favorites.py remove C1234567890abcdef
 """
+
 from __future__ import annotations
 
 import argparse

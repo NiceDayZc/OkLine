@@ -19,8 +19,9 @@ import time
 class RateLimiter:
     """Token bucket: allow ``rate`` requests per ``per`` seconds (burst = rate)."""
 
-    def __init__(self, rate: float = 5.0, per: float = 1.0,
-                 burst: float = None) -> None:  # type: ignore[assignment]
+    def __init__(
+        self, rate: float = 5.0, per: float = 1.0, burst: float | None = None
+    ) -> None:
         self.rate = float(rate)
         self.per = float(per)
         self.capacity = float(burst if burst is not None else rate)
@@ -36,8 +37,9 @@ class RateLimiter:
                 now = time.monotonic()
                 elapsed = now - self._last
                 self._last = now
-                self._tokens = min(self.capacity,
-                                   self._tokens + elapsed * (self.rate / self.per))
+                self._tokens = min(
+                    self.capacity, self._tokens + elapsed * (self.rate / self.per)
+                )
                 if self._tokens >= cost:
                     self._tokens -= cost
                     return waited
