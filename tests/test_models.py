@@ -49,10 +49,18 @@ class TestMidToType:
         """An empty mid falls back to USER rather than raising."""
         assert mid_to_type("") == int(MIDType.USER)
 
-    @pytest.mark.parametrize("mid", ["xabc", "1abc", "Uabc", "Cabc"])
-    def test_unknown_prefix_defaults_to_user(self, mid):
-        """Anything that is not c/r/s (case-sensitive) defaults to USER."""
+    @pytest.mark.parametrize("mid", ["xabc", "1abc", "Uabc", "uabc"])
+    def test_unknown_or_user_prefix_defaults_to_user(self, mid):
+        """Anything that is not c/r/s defaults to USER."""
         assert mid_to_type(mid) == int(MIDType.USER)
+
+    @pytest.mark.parametrize("mid,expected", [
+        ("Cabc", MIDType.GROUP), ("cabc", MIDType.GROUP),
+        ("Rabc", MIDType.ROOM), ("Sabc", MIDType.SQUARE_CHAT),
+    ])
+    def test_prefix_is_case_insensitive(self, mid, expected):
+        """Modern mids are upper-case (U/C/R/S) — match either case."""
+        assert mid_to_type(mid) == int(expected)
 
     def test_returns_plain_int(self):
         """The result is a bare ``int`` (JSON-serialisable), not an IntEnum."""
