@@ -4,6 +4,13 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-06-23
+
+### Changed
+- The interactive menu now goes **straight to QR login** when there's no saved
+  session (instead of a yes/no prompt) — `okline` on a fresh machine shows the QR
+  immediately, scan it, and you're in the menu.
+
 ## [2.5.0] - 2026-06-23
 
 ### Added

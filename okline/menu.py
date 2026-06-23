@@ -69,9 +69,12 @@ def _ensure_session(args: Any) -> Optional[Any]:
     if os.path.exists(path):
         from .client import OkLine
         return OkLine.from_tokens_file(path)
-    if ui.prompt("No saved session — log in by QR now?", "y").lower() in ("y", "yes"):
+    # no session yet — go straight to QR login (that is the whole point)
+    print(ui.dim("  No saved session — starting QR login…\n"))
+    try:
         return _qr_login(path)
-    return None
+    except KeyboardInterrupt:
+        return None
 
 
 # -- actions ----------------------------------------------------------------
