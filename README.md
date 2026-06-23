@@ -102,25 +102,27 @@ bot.on_message(lambda ctx: ctx.reply(f"you said: {ctx.text}"))
 bot.run()
 ```
 
-From the shell:
+From the shell — `okline login` once, then everything reuses the session:
 
 ```bash
-python -m okline qr-login --save tokens.json
-python -m okline call Talk.TalkService.getProfile "[2]" --tokens-file tokens.json
-python -m okline send <mid> "hello" --tokens-file tokens.json
+okline login                 # scan the QR; saves tokens.json
+okline send <mid> "hello"
+okline call Talk.TalkService.getProfile "[2]"
 ```
 
 ## Documentation
 
+Full docs in [`docs/`](docs/index.md):
+
 | Guide | |
 |-------|---|
-| [Getting started](docs/getting-started.md) | install, first call, the `OkLine` object |
-| [Authentication](docs/authentication.md) | token reuse, e‑mail (RSA), QR login, refresh |
-| [Sending messages](docs/messaging.md) | text, stickers, location, media, reactions |
-| [Receiving events](docs/receiving-events.md) | the SSE stream and a simple bot |
-| [Building bots & helpers](docs/bots.md) | bot framework, typed models, sessions |
+| [Getting started](docs/getting-started.md) | install, `okline login`, the menu, first Python call |
+| [Authentication](docs/authentication.md) | token reuse, e‑mail (RSA), QR login, refresh, logout |
+| [Sending messages](docs/messaging.md) | text, stickers, location, contacts, flex, reactions |
+| [Media](docs/media.md) · [E2EE](docs/e2ee.md) | send images/files · encrypt & decrypt (1:1 + group) |
+| [Receiving events](docs/receiving-events.md) · [Bots](docs/bots.md) | the SSE stream · the bot framework |
 | [Recording](docs/recording.md) | paste / export every response |
-| [CLI](docs/cli.md) | every `python -m okline` command |
+| [CLI](docs/cli.md) · [Cookbook](docs/cookbook.md) | every `okline` command · copy‑paste recipes |
 | [Architecture](docs/architecture.md) | the protocol, `X-Hmac`, module map |
 | [Endpoint reference](docs/ENDPOINTS.md) | all 77 endpoints with their fields |
 | [Troubleshooting](docs/troubleshooting.md) · [Contributing](docs/contributing.md) | |

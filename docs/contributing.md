@@ -2,19 +2,22 @@
 
 [← docs home](./index.md)
 
-Thanks for helping improve OkLine! This page covers dev setup, the test-suite
-layout, and how to add new endpoints.
+Thanks for helping improve OkLine! This page covers dev setup, the project
+layout, how to add an endpoint, and the release flow.
 
 ## Setup
 
 ```bash
-git clone <your-fork-url>
+git clone https://github.com/NiceDayZc/okline
 cd OkLine
-pip install -r requirements.txt
-pip install pytest qrcode
+pip install -e ".[test,qr]"     # editable install + pytest + qrcode
 # Node.js 18+ must be on PATH for X-Hmac (and the bridge tests)
 node --version
 ```
+
+`pip install -e .` installs OkLine in **editable** mode, so your source edits
+take effect immediately. The `[test,qr]` extras pull in `pytest` and the
+optional inline-QR dependency.
 
 ## Running the tests
 
@@ -28,6 +31,38 @@ needs neither network nor Node. The one exception is
 `tests/test_hmac_bridge.py`, which exercises the real WASM and **skips itself**
 when Node isn't available.
 
+## Project layout
+
+```
+okline/
+  __init__.py        public API surface + __version__
+  client.py          the OkLine facade (services + auth + ops + obs + e2ee + recorder)
+  transport.py       HTTP engine: headers, X-Hmac, envelope, errors, recording
+  hmac_signer.py     LtsmBridge — the Node subprocess running ltsm.wasm
+  ltsm/              ltsm.wasm, ltsmSandbox.js, ltsm_bridge.js
+  auth.py            email / QR / token-refresh login
+  crypto.py          RSA login-credential encryption
+  e2ee.py            E2EEManager (Letter Sealing: channels + encrypt/decrypt)
+  e2ee_crypto.py     pure-Python E2EE framing (chunks, sealed message; V1/V2)
+  session.py         token + E2EE keychain persistence
+  operations.py      SSE / long-poll operation receiver
+  bot.py             the Bot event framework
+  entities.py        typed response models
+  ratelimit.py       RateLimiter token bucket
+  obs.py             media (object storage)
+  recorder.py        Exchange + Recorder (capture / redact / export)
+  qrterm.py          terminal QR rendering
+  menu.py, ui.py     interactive terminal menu (run `okline` with no args)
+  __main__.py        the CLI
+  enums.py, models.py, endpoints.py, exceptions.py
+  services/          one typed method per Thrift endpoint
+tests/               offline pytest suite (+ conftest.py fakes)
+docs/                this documentation
+```
+
+See [architecture.md](./architecture.md) for the full module map and how the
+pieces fit together.
+
 ## Test layout
 
 Shared fixtures live in [`tests/conftest.py`](../tests/conftest.py):
@@ -37,13 +72,14 @@ Shared fixtures live in [`tests/conftest.py`](../tests/conftest.py):
 | `build_api(responder, *, access_token, bridge, enable_hmac, record, **kw)` | build an `OkLine` wired to a fake session |
 | `enveloped(data)` | wrap data in the `{message:OK,data}` envelope |
 | `route({suffix: data})` | build a responder from an endpoint→response table |
-| `FakeResp`, `FakeSession`, `FakeBridge` | the fakes |
+| `FakeResp`, `FakeSession`, `FakeBridge` | the fakes (HTTP + LTSM bridge) |
 | `USER_MID`, `GROUP_MID`, `ROOM_MID`, `SAMPLE_*` | sample data |
 | fixtures `make_api`, `api`, `fake_bridge`, `last_request` | convenience |
 
 Files are split by concern: `test_transport.py`, `test_crypto.py`,
 `test_enums.py`, `test_models.py`, `test_endpoints.py`, `test_recorder.py`,
-`test_auth.py`, `test_qrterm.py`, `test_cli.py`, `test_hmac_bridge.py`, and
+`test_auth.py`, `test_e2ee.py`, `test_qrterm.py`, `test_cli.py`,
+`test_features.py`, `test_selftest.py`, `test_hmac_bridge.py`, and
 `test_services_*.py`.
 
 ### A typical service test
@@ -84,7 +120,7 @@ class ExampleMixin:
         return self.transport.call("Talk.TalkService.myMethod", [req_seq, mid])
 ```
 
-Then include the mixin in `services/__init__.py`'s `AllServices`.
+Then include the mixin in `services/__init__.py`'s `AllServices` aggregate.
 
 ## Style
 
@@ -95,18 +131,33 @@ Then include the mixin in `services/__init__.py`'s `AllServices`.
 
 ## Releasing / publishing to PyPI
 
+Releases are built and published by GitHub Actions using **PyPI trusted
+publishing** (OIDC) — no API token is stored anywhere. The workflow lives in
+[`.github/workflows/publish.yml`](../.github/workflows/publish.yml) and triggers
+when you push a version tag (`vX.Y.Z`) or publish a GitHub Release. It builds the
+sdist + wheel, runs `twine check`, then publishes via OIDC.
+
+Typical release flow:
+
 ```bash
+# 1. bump the version in pyproject.toml AND okline/__init__.py (__version__),
+#    update CHANGELOG.md, commit.
+# 2. (optional) build + validate locally first:
 pip install build twine
 python -m build                 # builds dist/*.whl and dist/*.tar.gz
 twine check dist/*              # validate metadata
-twine upload dist/*            # needs a PyPI account + API token
-# then tag the release:
-git tag v2.1.0 && git push --tags
-gh release create v2.1.0 --generate-notes
+# 3. tag and push — this triggers the publish workflow:
+git tag v2.5.3 && git push --tags
+gh release create v2.5.3 --generate-notes
 ```
 
+(Use the next version number, not necessarily `2.5.3`.) One-time PyPI setup adds
+a *trusted publisher* for the repo/workflow/`pypi` environment; see the comments
+at the top of the workflow file.
+
 The wheel bundles the LTSM module (`ltsm.wasm`, `ltsmSandbox.js`, the bridge) and
-`py.typed`. `dist/`, `build/` and `*.egg-info/` are git-ignored.
+`py.typed` via `[tool.setuptools.package-data]` in `pyproject.toml`. `dist/`,
+`build/` and `*.egg-info/` are git-ignored.
 
 ## Scope & ethics
 

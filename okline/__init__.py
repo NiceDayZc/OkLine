@@ -64,7 +64,7 @@ from .transport import (
     Transport,
 )
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 #: The LINE client version this library emulates.
 LINE_APP_VERSION = APP_VERSION
 

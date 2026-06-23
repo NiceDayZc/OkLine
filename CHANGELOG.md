@@ -4,6 +4,31 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.3] - 2026-06-23
+
+A full system audit (every endpoint cross-checked against the real LINE Chrome
+bundle; 21/21 read endpoints re-verified live) plus a complete docs rewrite.
+
+### Fixed
+- **API fidelity** (the only two drifts found across 88 audited endpoints):
+  `getChats` now sends the trailing `syncReason` arg, and `logoutV2` sends an
+  empty arg array (it is a no-arg method).
+- `get_contacts` auto-chunks at 100 mids (same `Invalid Length` cap as
+  `get_chats`), so large accounts can fetch all contacts.
+- The **bot framework now transparently decrypts** Letter-Sealed messages —
+  `ctx.text` is the plaintext.
+- `send_message` only auto-seals text/location on code 82 (no longer mangles
+  media-placeholder sends).
+
+### Added / Changed
+- CLI: `qr-login` is an alias of `login`; new top-level `--version`/`-V`; new
+  `logout` command; `react` takes the reaction as a positional
+  (`okline react <id> LOVE`); `send <name>` resolves a contact name to its mid;
+  a friendly Node.js preflight before login; `broadcast` stops on rate-limit/abuse.
+- **Docs overhaul** — every page rewritten and accurate to this version, with new
+  [E2EE](docs/e2ee.md), [Media](docs/media.md) and [Cookbook](docs/cookbook.md)
+  pages and a documentation [index](docs/index.md).
+
 ## [2.5.2] - 2026-06-23
 
 ### Fixed

@@ -14,6 +14,40 @@ Every request needs the `X-Hmac` signature, computed by Node + `ltsm.wasm`.
   `OkLine(config=LineConfig(enable_hmac=False))` (requests will then be rejected
   by the real server — this is for mocked tests).
 
+## `okline: command not found`
+
+The `okline` script is installed into your Python environment's `Scripts/`
+(Windows) or `bin/` (macOS/Linux) directory. If your shell can't find it:
+
+- Run the module form instead — it always works:
+  ```bash
+  python -m okline whoami
+  ```
+- Or add the Scripts/bin directory to your `PATH`. On Windows it's usually
+  `...\PythonXX\Scripts` (or the venv's `Scripts`); `pip show -f okline` lists
+  where the script landed.
+
+## `[encrypted]` messages / can't read Letter-Sealed text
+
+If a received message shows up as `[encrypted]` (or its `text` is empty while it
+has a `chunks` field), your E2EE keys aren't loaded.
+
+- **Log in once** so the keychain is captured and saved:
+  ```bash
+  okline login
+  ```
+  This writes `./tokens.json` **including** the E2EE keychain; later runs reuse
+  it automatically.
+- In code, reuse that session and check readiness:
+  ```python
+  api = OkLine.from_tokens_file("tokens.json")
+  print(api.e2ee.is_ready())          # must be True to encrypt/decrypt
+  msg = api.decrypt_message(received)  # returns plaintext `text`
+  ```
+- If `is_ready()` is `False`, the keychain wasn't loaded — re-run `okline login`
+  (scan QR → confirm PIN) to refresh it. E2EE keys load during `qr_login` and
+  persist via `save_tokens` / `from_tokens_file`.
+
 ## The phone shows "an error occurred" after scanning the QR
 
 The QR must carry `?secret=<curve25519 pubkey>&e2eeVersion=1`. OkLine adds this
@@ -26,6 +60,30 @@ automatically in `auth.qr_login` — make sure you render the URL passed to your
 - Windows console garbling the blocks: run `chcp 65001` first, or use Windows
   Terminal / PowerShell 7.
 - Make it bigger: `print_qr(url, style="full")` (double width).
+- No inline QR at all? Install the optional extra: `pip install "okline[qr]"`.
+
+## `UnicodeEncodeError` / garbled non-ASCII (Thai, emoji, …)
+
+The CLI already forces UTF-8 output, so `okline ...` prints non-ASCII text
+correctly. In **your own scripts**, a legacy console encoding (e.g. Windows
+cp1252) can still raise `UnicodeEncodeError`. Fix it once at startup:
+
+```python
+import sys
+sys.stdout.reconfigure(encoding="utf-8")   # Python 3.7+
+```
+
+or set the environment variable before launching Python:
+
+```bash
+# Windows
+set PYTHONUTF8=1
+# macOS / Linux
+export PYTHONUTF8=1
+```
+
+`api.print_last()` is already UTF-8 safe and degrades gracefully on a console
+that can't encode a character.
 
 ## A response is `None` or a key is missing (`KeyError`)
 
@@ -39,12 +97,22 @@ LINE_DEBUG=1 python your_script.py
 
 A non-`OK` envelope is raised as `LineApiError` (with `.code`, `.reason`).
 
+## `getChats` / `getContacts` — `Invalid Length` (code 6)
+
+The gateway rejects more than 100 mids in one `getChats`/`getContactsV2` call.
+OkLine now **auto-chunks** these requests at 100 mids and merges the results, so
+you can pass arbitrarily long lists. If you still hit this, **upgrade** to the
+latest version (`pip install -U okline`).
+
 ## `401` / token expired
 
 - Pass a `refresh_token` so OkLine auto-refreshes on `401`:
   `OkLine(access_token=..., refresh_token=...)`.
 - Or refresh manually: `api.auth.refresh_access_token()`.
-- If the session was revoked (logged out on another device), log in again.
+- If you loaded the client with `OkLine.from_tokens_file(...)`, the refreshed
+  token is written back to the session file automatically.
+- If the session was revoked (logged out on another device), log in again
+  (`okline login`).
 
 ## `LineMustUpgradeError` / `MUST_UPGRADE`
 
@@ -79,7 +147,13 @@ something happens or the server times out. Use a thread, or set
 ## Rate limits / abuse blocks
 
 `EXCESSIVE_ACCESS`(4), `ABUSE_BLOCK`(35), `CONGESTION_CONTROL`(58) mean you're
-sending too fast or tripping anti-abuse. Slow down and only use your own account.
+sending too fast or tripping anti-abuse. Slow down and only use your own
+account. You can pace requests automatically with the built-in token bucket:
+
+```python
+from okline.ratelimit import RateLimiter
+api.transport.rate_limiter = RateLimiter(rate=5, per=1.0)   # ~5 req/s
+```
 
 ## Still stuck?
 
@@ -89,3 +163,5 @@ Capture a redacted transcript and inspect it:
 api.save_log("debug.txt")          # secrets masked by default
 print(api.last.pretty())
 ```
+
+See [recording](./recording.md) for the full transcript/HAR options.
