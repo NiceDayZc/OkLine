@@ -1,0 +1,57 @@
+name: Publish to PyPI
+
+# Builds and publishes the package to PyPI using **trusted publishing** (OIDC) —
+# no API token is stored anywhere. Triggers when you push a version tag (vX.Y.Z)
+# or publish a GitHub Release.
+#
+# One-time PyPI setup (https://pypi.org/manage/project/okline/settings/publishing/):
+#   add a "trusted publisher" with:
+#     Owner:        NiceDayZc
+#     Repository:   okline
+#     Workflow:     publish.yml
+#     Environment:  pypi
+# (For the very first release, configure a "pending publisher" under
+#  https://pypi.org/manage/account/publishing/ before the project exists.)
+
+on:
+  push:
+    tags: ["v*"]
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install --upgrade build
+      - run: python -m build
+      - run: python -m pip install --upgrade twine && twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI (OIDC)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/okline/
+    permissions:
+      id-token: write          # mandatory for trusted publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

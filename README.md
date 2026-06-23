@@ -2,9 +2,10 @@
 
 **A high-level Python client / SDK for the LINE Chrome messaging API.**
 
+[![PyPI](https://img.shields.io/pypi/v/okline.svg)](https://pypi.org/project/okline/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-417%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-428%20passing-brightgreen.svg)](tests/)
 [![Endpoints](https://img.shields.io/badge/endpoints-77-blue.svg)](docs/ENDPOINTS.md)
 
 OkLine reproduces the API of the official **LINE Chrome extension** (`CHROMEOS`
@@ -32,6 +33,14 @@ api.send_text("u0123456789abcdef0123456789abcdef", "hello from python")
 
 ## Install
 
+```bash
+pip install okline
+```
+
+The bundled `ltsm.wasm` (for `X-Hmac` signing) ships inside the wheel, so that's
+all you need from Python. Optionally `pip install qrcode` to render the QR-login
+code in your terminal.
+
 **Prerequisites**
 
 - **Python 3.9+**
@@ -39,23 +48,21 @@ api.send_text("u0123456789abcdef0123456789abcdef", "hello from python")
   request signature (the real `ltsm.wasm` runs through a tiny Node bridge;
   [details](docs/architecture.md)). Check with `node --version`.
 
-**Install from source** (recommended — installs OkLine and its dependencies):
-
-```bash
-git clone https://github.com/NiceDayZc/okline.git
-cd okline
-pip install -e .          # installs the `okline` package + requests + cryptography
-pip install qrcode        # optional: render the QR-login code in your terminal
-```
-
 Verify it works:
 
 ```bash
 python -m okline version
 ```
 
-> Not on PyPI yet. Once published you'll be able to `pip install okline` — until
-> then use the source install above.
+<details>
+<summary>Install from source instead</summary>
+
+```bash
+git clone https://github.com/NiceDayZc/okline.git
+cd okline
+pip install -e .          # editable install of the okline package + deps
+```
+</details>
 
 **First login** (do this once; the session is then reusable):
 
