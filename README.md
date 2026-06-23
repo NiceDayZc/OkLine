@@ -32,13 +32,37 @@ api.send_text("u0123456789abcdef0123456789abcdef", "hello from python")
 
 ## Install
 
+**Prerequisites**
+
+- **Python 3.9+**
+- **Node.js 18+** on your `PATH` — required to compute the mandatory `X-Hmac`
+  request signature (the real `ltsm.wasm` runs through a tiny Node bridge;
+  [details](docs/architecture.md)). Check with `node --version`.
+
+**Install from source** (recommended — installs OkLine and its dependencies):
+
 ```bash
-pip install -r requirements.txt     # requests + cryptography
-pip install qrcode                  # optional, for terminal QR login
+git clone https://github.com/NiceDayZc/okline.git
+cd okline
+pip install -e .          # installs the `okline` package + requests + cryptography
+pip install qrcode        # optional: render the QR-login code in your terminal
 ```
 
-Requires **Python 3.9+** and **Node.js 18+** on your `PATH` (used to compute the
-`X-Hmac` signature — [details](docs/architecture.md)).
+Verify it works:
+
+```bash
+python -m okline version
+```
+
+> Not on PyPI yet. Once published you'll be able to `pip install okline` — until
+> then use the source install above.
+
+**First login** (do this once; the session is then reusable):
+
+```bash
+python -m okline qr-login --save tokens.json     # scan the QR with the LINE app
+python -m okline profile --tokens-file tokens.json
+```
 
 ## Quick start
 
