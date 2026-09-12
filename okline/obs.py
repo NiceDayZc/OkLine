@@ -337,13 +337,16 @@ class ObsClient:
         return _json(resp)
 
     # -- .obs metadata endpoints (the bundle's GD / FF / playback helpers) ----
-    def object_info(self, path: str, *, talk_meta: str | None = None) -> Any:
+    def object_info(
+        self, path: str, *, talk_meta: str | None = None, message_id: str | None = None
+    ) -> Any:
         """``GET <path>/object_info.obs`` — the extension's ``GD``
-        (getObjectInfo); FD auth, optional pre-built ``X-Talk-Meta``."""
+        (getObjectInfo); FD auth, optional pre-built ``X-Talk-Meta``
+        (E2EE media needs it — pass ``message_id`` and it is built)."""
         url = self._t.config.obs_base + path + "/object_info.obs"
         headers = self._t.base_headers(with_access=False, base=self._t.config.obs_base)
         headers.update(self._obs_auth(path))
-        headers.update(self._talk_meta_header(talk_meta, None))
+        headers.update(self._talk_meta_header(talk_meta, message_id))
         resp = self._t._send("GET", url, headers=headers)
         _raise_for_status(resp, url)
         return _json(resp)

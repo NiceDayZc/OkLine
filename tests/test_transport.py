@@ -42,6 +42,7 @@ from conftest import FakeBridge, FakeResp, FakeSession, build_api, enveloped, ro
 from okline.exceptions import (
     LineApiError,
     LineAuthError,
+    LineError,
     LineLoginRequired,
     LineMustUpgradeError,
 )
@@ -1065,3 +1066,66 @@ def test_build_api_returns_recording_client_by_default():
         assert len(api.history) == 1
     finally:
         api.close()
+
+
+# ---------------------------------------------------------------------------
+# Internal marker exceptions never escape (type assertions, not isinstance)
+# ---------------------------------------------------------------------------
+class TestPublicErrorSurface:
+    """The retry/refresh marker subclasses are transport-internal; after the
+    budget is exhausted (or renewal is impossible) the caller must see the
+    plain public class (live-tested: a 99999 surfaced as ``_RetryableApiError``
+    from ``determineMediaMessageFlow``)."""
+
+    def test_99999_budget_exhausted_raises_plain_lineapierror(self):
+        from okline.transport import _RetryableApiError
+
+        t = make_transport(
+            lambda m, u, kw: FakeResp(200, {"code": 99999, "message": "UNKNOWN_ERROR"})
+        )
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0])
+        assert type(ei.value) is LineApiError
+        assert not isinstance(ei.value, _RetryableApiError)
+        assert ei.value.code == 99999
+
+    def test_119_without_refresh_hook_raises_plain_lineautherror(self):
+        from okline.transport import _MustRefreshTokenError
+
+        t = make_transport(lambda m, u, kw: talk_exc(119, "MUST_REFRESH_V3_TOKEN"))
+        with pytest.raises(LineAuthError) as ei:
+            t.call(PROFILE, [0])
+        assert type(ei.value) is LineAuthError
+        assert not isinstance(ei.value, _MustRefreshTokenError)
+        assert ei.value.code == 119
+
+    def test_119_refresh_failure_raises_plain_lineautherror(self):
+        from okline.transport import _MustRefreshTokenError
+
+        state = {"calls": 0}
+
+        def responder(m, u, kw):
+            if u.endswith("tokenRefresh"):
+                state["calls"] += 1
+                return FakeResp(500, {})
+            return talk_exc(119, "MUST_REFRESH_V3_TOKEN")
+
+        t = make_transport(responder)
+
+        def hook() -> bool:
+            try:
+                t.post_json(
+                    "/api/auth/tokenRefresh",
+                    {"refreshToken": "R"},
+                    require_auth=False,
+                    allow_refresh=False,
+                )
+                return True
+            except LineError:
+                return False
+
+        t._refresh_hook = hook
+        with pytest.raises(LineAuthError) as ei:
+            t.call(PROFILE, [0])
+        assert type(ei.value) is LineAuthError
+        assert not isinstance(ei.value, _MustRefreshTokenError)

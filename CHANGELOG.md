@@ -4,6 +4,28 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.1] - 2026-09-13
+
+Live-testing follow-up (everything below was found by exercising 2.9.0
+against the real gateway and is live-verified):
+
+- **`E2EEManager.download_sealed_media(message, *, info=False)`** — the
+  extension's `$P`/`GD` sealed-media receive flow as one call: decrypt the
+  message (restores `ENC_KM`), fetch the object from `/r/talk/<SID>/<OID>`
+  with the `X-Talk-Meta` header, decrypt the blob with the HKDF
+  `FileEncryption` keys. `info=True` also returns the `object_info.obs`
+  dict (name/mime/size). Live-verified end-to-end against a real sealed
+  image. `ObsClient.object_info` gained the same `message_id=` parameter
+  `download_object` has (E2EE media needs `X-Talk-Meta` on the info query
+  too).
+- **Internal retry/refresh markers no longer escape** — after the retry
+  budget ran out, outer-99999 errors surfaced to callers as the internal
+  `_RetryableApiError` subclass (and 119-without-refresh as
+  `_MustRefreshTokenError`); both now surface as plain `LineApiError` /
+  `LineAuthError` as documented (live: a `determineMediaMessageFlow` 99999
+  leaked the subclass). Tests assert on the exact type, not `isinstance`.
+- Tests: 699 passing (live bridge suite self-skips without Node).
+
 ## [2.9.0] - 2026-09-12
 
 A **parity-completion release**: the four items 2.8.0 listed as *not ported*

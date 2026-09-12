@@ -340,6 +340,43 @@ class E2EEManager:
         """
         return fr.generate_enc_km()
 
+    def download_sealed_media(
+        self, message: dict[str, Any], *, info: bool = False
+    ) -> bytes | tuple[bytes, Any]:
+        """Download and decrypt the media blob of a sealed (E2EE) message.
+
+        The extension's ``$P``/``GD`` flow as one call: decrypt the message
+        (restores ``ENC_KM`` into ``contentMetadata``), fetch the object from
+        ``/r/talk/<SID>/<OID>`` with the ``X-Talk-Meta`` header, then decrypt
+        the blob with the HKDF ``FileEncryption`` keys derived from
+        ``ENC_KM``.  Returns the plaintext bytes (``info=True`` adds the
+        ``object_info.obs`` dict — name, mime, size, ...).
+
+        Raises :class:`~okline.exceptions.LineApiError` when the message is
+        not sealed media (no ``ENC_KM`` after decryption).
+        """
+        d = self.decrypt(message)
+        meta = d.get("contentMetadata") or {}
+        enc_km = meta.get("ENC_KM")
+        oid = meta.get("OID")
+        if not enc_km or not oid:
+            raise LineApiError(
+                "message has no ENC_KM/OID after decryption — not sealed media",
+                path="download_sealed_media",
+                raw={"contentType": d.get("contentType"), "hasENC_KM": bool(enc_km)},
+            )
+        sid = meta.get("SID", "m")
+        msg_id = str(d.get("id") or message.get("id") or "")
+        obs_info: Any = None
+        if info:
+            obs_info = self.api.obs.object_info(
+                f"/r/talk/{sid}/{oid}", message_id=msg_id or None
+            )
+        blob = self.api.obs.download_object("talk", sid, oid, message_id=msg_id or None)
+        km = base64.b64decode(enc_km + "=" * (-len(enc_km) % 4))
+        plain = fr.decrypt_blob(km, blob)
+        return (plain, obs_info) if info else plain
+
     def _finish_decrypt(self, message: dict[str, Any], pt_b64: str) -> dict[str, Any]:
         """``yL`` — merge the decrypted plaintext back into the message.
 

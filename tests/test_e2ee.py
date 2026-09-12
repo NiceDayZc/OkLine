@@ -966,3 +966,96 @@ def test_send_with_retry_no_loop_when_gating_declines(make_api):
     assert ei.value.code == 82  # surfaces; no RecursionError
     assert seen["sends"] == 1  # exactly one plain attempt
     api.close()
+
+
+# --- download_sealed_media (the extension's $P/GD flow as one call) ---------
+class _ObsBytesResp(FakeResp):
+    """FakeResp tolerating a raw-bytes body (OBS downloads)."""
+
+    def __init__(self, status: int, body):
+        if isinstance(body, (bytes, bytearray)):
+            self.status_code = status
+            self.content = bytes(body)
+            self.text = ""
+            self.headers = {"content-type": "application/octet-stream"}
+        else:
+            super().__init__(status, body)
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise AssertionError(f"HTTP {self.status_code}")
+
+
+class _MediaDecryptBridge(_DecryptBridge):
+    """Decrypts to a plaintext carrying sealed-media key material."""
+
+    def e2ee_decrypt_v2(self, channel, **kw) -> str:
+        return base64.b64encode(
+            json.dumps({"keyMaterial": ENC_KM, "fileName": "pic.jpg"}).encode()
+        ).decode()
+
+
+ENC_KM = base64.b64encode(b"K" * 32).decode()
+_KM = b"K" * 32
+_PLAIN = b"\xff\xd8\xff" + b"JPEGDATA" * 40
+_BLOB = fr.encrypt_blob(_KM, _PLAIN)
+
+
+def _media_api(make_api):
+    peer_pub = base64.b64encode(b"P" * 32).decode()
+
+    def responder(method, url, kw):
+        if url.endswith("getE2EEPublicKey"):
+            _mid, _ver, kid = json.loads(kw["data"])
+            return enveloped({"keyData": peer_pub, "keyId": kid})
+        if "/r/talk/emi/OID1" in url:
+            if url.endswith("object_info.obs"):
+                return FakeResp(200, {"size": len(_BLOB), "mime": "image/jpeg"})
+            return _ObsBytesResp(200, _BLOB)
+        return enveloped({})
+
+    api = make_api(responder, bridge=_MediaDecryptBridge())
+    mgr = api.e2ee
+    mgr.my_mid, mgr.my_keys, mgr.latest_key_id = "Ume", {5312832: 11}, 5312832
+    api.transport.tokens.encrypted_access_tokens["2"] = "ENC1"  # OBS auth cache
+    return api
+
+
+def _sealed_media() -> dict:
+    msg = _sealed(USER_MID2, "Ume", 42, 5312832)
+    msg["contentType"] = 1
+    msg["id"] = "MSG-9"
+    msg["contentMetadata"].update({"SID": "emi", "OID": "OID1"})
+    return msg
+
+
+def test_download_sealed_media_roundtrip(make_api):
+    api = _media_api(make_api)
+    out = api.e2ee.download_sealed_media(_sealed_media())
+    assert out == _PLAIN
+
+
+def test_download_sealed_media_with_info(make_api):
+    api = _media_api(make_api)
+    plain, info = api.e2ee.download_sealed_media(_sealed_media(), info=True)
+    assert plain == _PLAIN
+    assert info == {"size": len(_BLOB), "mime": "image/jpeg"}
+    # the object_info call carried the X-Talk-Meta built from the message id
+
+    calls = [c for c in api.transport.session.calls if "object_info.obs" in c["url"]]
+    assert calls and "X-Talk-Meta" in calls[0]["headers"]
+
+
+def test_download_sealed_media_sends_talk_meta_and_sid_oid(make_api):
+    api = _media_api(make_api)
+    api.e2ee.download_sealed_media(_sealed_media())
+    dl = [c for c in api.transport.session.calls if "/r/talk/emi/OID1" in c["url"]]
+    assert dl and "X-Talk-Meta" in dl[0]["headers"]
+
+
+def test_download_sealed_media_rejects_non_media(make_api):
+    api = _media_api(make_api)
+    msg = _sealed(USER_MID2, "Ume", 42, 5312832)  # text message, no SID/OID
+    with pytest.raises(LineApiError) as ei:
+        api.e2ee.download_sealed_media(msg)
+    assert "ENC_KM/OID" in str(ei.value)

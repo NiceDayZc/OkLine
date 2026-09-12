@@ -97,6 +97,21 @@ is sent unsealed — text is still always sealeable. See
 
 Media send works for chats that allow plain mode (most groups and ordinary DMs).
 
+### Downloading sealed media
+
+One call handles the whole receive side (decrypt the message for `ENC_KM`,
+fetch the object with `X-Talk-Meta`, decrypt the blob):
+
+```python
+msg = api.get_recent_messages(chat_mid, 10)[0]  # a sealed IMAGE/VIDEO/... message
+data = api.e2ee.download_sealed_media(msg)  # -> plaintext bytes
+data, info = api.e2ee.download_sealed_media(msg, info=True)  # + name/mime/size
+```
+
+The pieces it wires together (`api.decrypt_message`, `api.obs.object_info`,
+`api.obs.download_object(..., message_id=...)`, `okline.e2ee_crypto.decrypt_blob`)
+remain public if you need the manual flow.
+
 ## See also
 
 - [Sending messages](./messaging.md) — text, stickers, location, flex

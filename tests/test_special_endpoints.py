@@ -542,3 +542,13 @@ def test_page_info():
 def test_operation_from_dict_params():
     op = Operation.from_dict({"revision": 1, "type": 5, "param3": "0"})
     assert op.revision == 1 and op.param3 == "0"
+
+
+def test_object_info_builds_talk_meta_from_message_id():
+    """``message_id=`` builds X-Talk-Meta (E2EE media needs it on object_info
+    too — live-tested on /r/talk/emi/<OID>/object_info.obs)."""
+    t = _obs_meta_transport()
+    obs = ObsClient(t)
+    obs.object_info("/r/talk/emi/OID1", message_id="MSG-9")
+    call = calls_of(t.session, "/r/talk/emi/OID1/object_info.obs")[0]
+    assert call["headers"]["X-Talk-Meta"] == build_talk_meta("MSG-9")

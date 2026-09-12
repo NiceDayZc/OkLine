@@ -227,6 +227,29 @@ class _MustRefreshTokenError(LineAuthError):
     """
 
 
+def _as_public_error(exc: LineError) -> LineError:
+    """Rebuild an internal marker exception as its plain public class.
+
+    ``_RetryableApiError`` / ``_MustRefreshTokenError`` exist only to route
+    retries inside :meth:`Transport.post_json`; callers must never see the
+    subclasses (live-tested: a ``determineMediaMessageFlow`` 99999 surfaced
+    as ``_RetryableApiError`` after the budget ran out).
+    """
+    base = LineAuthError if isinstance(exc, LineAuthError) else LineApiError
+    if type(exc) is base:
+        return exc
+    clone = base(
+        str(exc),
+        code=getattr(exc, "code", None),
+        reason=getattr(exc, "reason", None),
+        metadata=getattr(exc, "metadata", None),
+        path=getattr(exc, "path", None),
+        status=getattr(exc, "status", None),
+        raw=getattr(exc, "raw", None),
+    )
+    return clone
+
+
 class Transport:
     """Low-level request engine shared by every service."""
 
@@ -514,7 +537,7 @@ class Transport:
                     t0,
                     started,
                 )
-                raise
+                raise _as_public_error(exc) from exc
             except _RetryableApiError as exc:
                 # Outer envelope 99999 (UNKNOWN_ERROR) or inner 115
                 # (SHOULD_RETRY): retried within the same budget as 5xx.
@@ -533,7 +556,7 @@ class Transport:
                     t0,
                     started,
                 )
-                raise
+                raise _as_public_error(exc) from exc
             except LineError as exc:
                 self._record_exchange(
                     "POST",
