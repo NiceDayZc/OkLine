@@ -43,12 +43,25 @@ Four flows are implemented, all faithful to ``static/js/main.js``:
        res = qrCodeLoginV2({authSessionId, ...})   -> certificate + tokens
 
 3. **Token refresh** (``refresh_access_token``) — ``/api/auth/tokenRefresh``.
+
+   The token-refresh *lifecycle* mirrors the extension's ``tT`` class
+   (main.js @~1850300): every loginV2/qrCodeLoginV2/tokenRefresh response
+   carries a ``tokenV3IssueResult`` with ``tokenIssueTimeEpochSec``,
+   ``durationUntilRefreshInSec`` and a ``refreshApiRetryPolicy``.  We record
+   that on :attr:`AuthFlows.token_schedule` (and notify an optional
+   :attr:`AuthFlows.on_token_issued` hook, which :class:`okline.OkLine` uses
+   for the proactive background renewal when ``auto_refresh_schedule=True``),
+   and retry ``AUTH_RETRY_REQUIRED`` (10202) refreshes with the policy's
+   jittered exponential backoff while treating ``AUTH_INVALID_REQUEST``
+   (10201) as a hard kickout.
 """
 
 from __future__ import annotations
 
 import base64
 import logging
+import random
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -62,7 +75,11 @@ from .crypto import (
 )
 from .enums import ErrorCode, IdentityProvider, LoginResultType, LoginType
 from .exceptions import LineApiError, LineAuthError, LineTransportError
-from .transport import Transport
+from .transport import (
+    _CODE_AUTH_INVALID_REQUEST,
+    _CODE_AUTH_RETRY_REQUIRED,
+    Transport,
+)
 
 log = logging.getLogger("okline.auth")
 
@@ -90,6 +107,102 @@ _E2EE_LOGIN_FALLBACK_CODES = frozenset(
 # (Id.E2EE_MY_KEY_NOT_AVAILABLE = "e2ee_my_key_not_available").
 _MY_KEY_NOT_AVAILABLE = "e2ee_my_key_not_available"
 
+# Client-side ceiling on the server-controlled refresh-retry delays.  The
+# backoff sleeps are blocking ``time.sleep`` on whatever thread triggered the
+# refresh — a user's API call via the 401/119 hook, or the SSE keepalive ping
+# thread — so a hostile/buggy ``maxDelayInMillis`` must not be able to park it
+# for an unbounded time (the extension's equivalent sleep is an async promise
+# and the page stays responsive, so it needs no cap; okline.operations caps
+# its reconnect backoff the same way at BACKOFF_MAX).
+REFRESH_RETRY_DELAY_CAP_MS = 60_000.0
+
+# Gateway envelope codes for /api/auth/tokenRefresh, shared with the
+# transport's qU-enum block (see okline.transport): AUTH_INVALID_REQUEST
+# (10201) is a hard kickout — the extension clears its auth state and shows
+# a kickout notice — re-login is required; AUTH_RETRY_REQUIRED (10202) asks
+# the client to retry the refresh after a refreshApiRetryPolicy backoff (the
+# tT.renewToken loop, main.js @~1850300).
+
+
+def _coerce_float(value: Any) -> float | None:
+    """Coerce a wire value (number or numeric string) to ``float``; ``None``
+    when missing/unparsable (the bundle wraps these fields in ``Number()``)."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@dataclass(frozen=True)
+class RefreshApiRetryPolicy:
+    """The ``refreshApiRetryPolicy`` of a tokenV3IssueResult (main.js
+    @~1830100): how ``/api/auth/tokenRefresh`` must be retried on gateway
+    code 10202 (AUTH_RETRY_REQUIRED).
+
+    The delay sequence is ``initial_delay_ms * multiplier**n``, each sleep
+    jittered by ``± jitter_rate`` — the tT class's ``renewToken`` loop::
+
+        let i = Number(initialDelayInMillis);
+        for (; i < Number(maxDelayInMillis); ) {
+            try { refresh(); return; }
+            catch (e) {
+                if (code(e) !== AUTH_RETRY_REQUIRED) throw e;
+                await sleep(i * uniform(1 - jitterRate, 1 + jitterRate));
+                i *= multiplier;
+            }
+        }
+        throw TOKEN_REFRESH_FAILED;
+
+    The defaults below apply per-field when the server-provided block is
+    missing or holds an unusable value (the extension's own placeholder
+    defaults are empty strings / zeros, which it would pass through
+    ``Number()`` — we prefer sane values over a degenerate loop).  Both
+    delays are additionally clamped client-side to
+    ``REFRESH_RETRY_DELAY_CAP_MS`` (60 s): unlike the extension's async
+    promise, our sleeps block the calling thread, so the server cannot park
+    it arbitrarily.
+    """
+
+    initial_delay_ms: float = 1000.0
+    max_delay_ms: float = 30000.0
+    multiplier: float = 2.0
+    jitter_rate: float = 0.1
+
+    @classmethod
+    def parse(cls, data: Any) -> RefreshApiRetryPolicy | None:
+        """Build a policy from a ``refreshApiRetryPolicy`` block, filling
+        unusable fields with the defaults above and clamping both delays to
+        ``REFRESH_RETRY_DELAY_CAP_MS``.  ``None`` when the server sent no
+        (or a degenerate) policy — the pre-v2.9 single-attempt behaviour
+        applies in that case."""
+        if not isinstance(data, dict) or not data:
+            return None
+
+        def num(key: str, default: float, *, minimum: float, maximum: float) -> float:
+            value = _coerce_float(data.get(key))
+            if value is None or value <= minimum:
+                return default
+            return min(value, maximum)
+
+        jitter = _coerce_float(data.get("jitterRate"))
+        policy = cls(
+            # multiplier must exceed 1 or the delay never grows to max
+            initial_delay_ms=num(
+                "initialDelayInMillis", 1000.0, minimum=0.0, maximum=REFRESH_RETRY_DELAY_CAP_MS
+            ),
+            max_delay_ms=num(
+                "maxDelayInMillis", 30000.0, minimum=0.0, maximum=REFRESH_RETRY_DELAY_CAP_MS
+            ),
+            multiplier=num("multiplier", 2.0, minimum=1.0, maximum=1000.0),
+            # jitterRate 0 (no jitter) is legitimate; outside [0, 1] it is not
+            jitter_rate=jitter if jitter is not None and 0.0 <= jitter <= 1.0 else 0.1,
+        )
+        if policy.initial_delay_ms >= policy.max_delay_ms:
+            return None  # degenerate: no retry could ever run
+        return policy
+
 
 def _append_secret(callback_url: str, secret_b64: str) -> str:
     """Append ``?secret=<b64 curve25519 pubkey>&e2eeVersion=1`` to the QR URL,
@@ -115,6 +228,13 @@ class LoginResult:
     pin_code: str | None = None
     verifier: str | None = None
     display_message: str | None = None
+    #: Proactive-renewal schedule from the tokenV3IssueResult (the extension's
+    #: tT class arms ``setTimeout(renewToken, (tokenIssueTimeEpochSec +
+    #: durationUntilRefreshInSec) * 1000 - <server-clock-aligned now>)`` —
+    #: a due-epoch-minus-now delay — on every issuance).
+    token_issue_time_epoch_sec: float | None = None
+    duration_until_refresh_sec: float | None = None
+    refresh_api_retry_policy: dict | None = None
     raw: Any = None
 
     @classmethod
@@ -129,12 +249,27 @@ class LoginResult:
             pin_code=data.get("pinCode"),
             verifier=data.get("verifier"),
             display_message=data.get("displayMessage"),
+            token_issue_time_epoch_sec=_coerce_float(tok.get("tokenIssueTimeEpochSec")),
+            duration_until_refresh_sec=_coerce_float(tok.get("durationUntilRefreshInSec")),
+            refresh_api_retry_policy=(
+                tok.get("refreshApiRetryPolicy")
+                if isinstance(tok.get("refreshApiRetryPolicy"), dict)
+                else None
+            ),
             raw=data,
         )
 
     @property
     def success(self) -> bool:
         return self.type == LoginResultType.SUCCESS
+
+    @property
+    def has_refresh_schedule(self) -> bool:
+        """Both schedule fields are present (enough to arm a renewal timer)."""
+        return (
+            self.token_issue_time_epoch_sec is not None
+            and self.duration_until_refresh_sec is not None
+        )
 
 
 class AuthFlows:
@@ -143,6 +278,17 @@ class AuthFlows:
     def __init__(self, transport: Transport) -> None:
         self._t = transport
         self.last_e2ee_login: dict | None = None
+        # Token-refresh lifecycle state, mirroring the extension's tT class
+        # (main.js @~1850300): the last tokenV3IssueResult's renewal schedule
+        # {tokenIssueTimeEpochSec, durationUntilRefreshInSec,
+        #  refreshApiRetryPolicy?} (camelCase, wire-shaped).
+        self.token_schedule: dict[str, Any] | None = None
+        # Optional hook fired whenever fresh tokens with a schedule are adopted
+        # (login or refresh) — the extension's setTokenV3IssueResult clears +
+        # re-arms its setTimeout here.  OkLine(..., auto_refresh_schedule=True)
+        # wires this to its background renewal timer.  Hook errors are logged,
+        # never propagated.
+        self.on_token_issued: Callable[[dict[str, Any]], None] | None = None
         # E2EE material from the last e-mail login attempt: the curve-key
         # handle and the 6-digit code (the PIN the user must confirm).
         self.last_email_e2ee: dict | None = None
@@ -852,19 +998,139 @@ class AuthFlows:
 
     # -- 3. token refresh ----------------------------------------------------
     def refresh_access_token(self, refresh_token: str | None = None) -> str:
+        """Refresh the access token via ``/api/auth/tokenRefresh``.
+
+        Lifecycle parity with the extension's ``renewToken`` (the tT class,
+        main.js @~1850300):
+
+        * The retry policy of the *stored* tokenV3IssueResult
+          (:attr:`token_schedule`, recorded by the last login/refresh)
+          governs retries: on gateway code 10202 (AUTH_RETRY_REQUIRED) the
+          call is retried with the policy's jittered exponential backoff
+          (``initialDelayInMillis * multiplier**n``, each sleep jittered by
+          ``jitterRate``) until the delay reaches ``maxDelayInMillis``, at
+          which point the refresh fails with :class:`LineAuthError`.
+          **The backoff sleeps are blocking** (``time.sleep``, like the
+          bundle's ``_R`` promise) — budget up to
+          ``min(maxDelayInMillis, REFRESH_RETRY_DELAY_CAP_MS)`` per retry
+          sequence: server-provided delays are clamped client-side at 60 s
+          so the refresh cannot park the calling thread for longer.
+        * Gateway code 10201 (AUTH_INVALID_REQUEST) is a hard kickout — the
+          extension clears its auth state and shows a kickout notice; we
+          raise :class:`LineAuthError` (re-login required).
+        * Without a server-provided retry policy the pre-v2.9 simple
+          behaviour applies: a single attempt, errors propagate unchanged
+          (except the 10201 kickout mapping).
+
+        On success the new tokenV3IssueResult's schedule + policy are
+        recorded and the :attr:`on_token_issued` hook fires (re-arming the
+        proactive renewal), and the new access token is returned.
+        """
         rt = refresh_token or self._t.tokens.refresh_token
         if not rt:
             raise LineAuthError("no refresh token available")
         path = "/" + ep.SPECIAL_ENDPOINTS["auth.tokenRefresh"]
-        data = self._t.post_json(path, {"refreshToken": rt}, require_auth=False)
+        policy = RefreshApiRetryPolicy.parse(
+            (self.token_schedule or {}).get("refreshApiRetryPolicy")
+        )
+        delay_ms = policy.initial_delay_ms if policy is not None else 0.0
+        while True:
+            if policy is not None and delay_ms >= policy.max_delay_ms:
+                # the bundle's `for (; i < maxDelayInMillis;)` exit — every
+                # retry budget spent while the server kept saying 10202.
+                raise LineAuthError(
+                    "token refresh failed: AUTH_RETRY_REQUIRED retry budget "
+                    f"exhausted (initial={policy.initial_delay_ms}ms, "
+                    f"max={policy.max_delay_ms}ms, multiplier={policy.multiplier})"
+                )
+            try:
+                data = self._t.post_json(path, {"refreshToken": rt}, require_auth=False)
+            except LineApiError as exc:
+                if exc.code == _CODE_AUTH_INVALID_REQUEST:
+                    # hard kickout — the extension's interceptor maps this to
+                    # a kickout notice + cleared auth state.
+                    raise LineAuthError(
+                        "token refresh rejected (AUTH_INVALID_REQUEST): re-login required"
+                    ) from exc
+                if policy is None or exc.code != _CODE_AUTH_RETRY_REQUIRED:
+                    raise
+                # AUTH_RETRY_REQUIRED: blocking jittered backoff, then grow
+                # the delay by the multiplier (the tT.renewToken loop).
+                jitter = random.uniform(1.0 - policy.jitter_rate, 1.0 + policy.jitter_rate)
+                time.sleep(delay_ms * jitter / 1000.0)
+                delay_ms *= policy.multiplier
+                continue
+            return self._apply_refresh_response(data)
+
+    def _apply_refresh_response(self, data: Any) -> str:
+        """Adopt a successful tokenRefresh response (tokens + schedule)."""
         tok = data.get("tokenV3IssueResult", data) if isinstance(data, dict) else {}
-        access = tok.get("accessToken") or data.get("accessToken")
+        access = tok.get("accessToken") or (
+            data.get("accessToken") if isinstance(data, dict) else None
+        )
         if not access:
             raise LineAuthError("token refresh returned no access token", raw=data)
         self._t.tokens.access_token = access
         if tok.get("refreshToken"):
             self._t.tokens.refresh_token = tok["refreshToken"]
+        # A fresh tokenV3IssueResult re-arms the schedule (and its retry
+        # policy) — the extension's setTokenV3IssueResult.
+        self._set_token_schedule(
+            _coerce_float(tok.get("tokenIssueTimeEpochSec")),
+            _coerce_float(tok.get("durationUntilRefreshInSec")),
+            tok.get("refreshApiRetryPolicy"),
+        )
         return access
+
+    def _set_token_schedule(
+        self,
+        issue_epoch_sec: float | None,
+        duration_sec: float | None,
+        retry_policy: dict | None,
+    ) -> dict[str, Any] | None:
+        """Record the renewal schedule of a freshly issued tokenV3IssueResult
+        (the extension's ``setTokenV3IssueResult``, minus its ``setTimeout`` —
+        the :attr:`on_token_issued` hook owns the client-side scheduling).
+
+        Returns the stored schedule dict, or ``None`` when the response
+        carried no schedule.  In that case any previously stored schedule is
+        *cleared* (mirroring the extension's clear-then-re-arm on every
+        issuance): the previous token's retry policy must not govern the next
+        refresh, and a stale fire time must not be persisted for
+        ``from_tokens_file`` to re-arm.  The hook stays silent — there is
+        nothing to arm — so the proactive renewal chain is disarmed until a
+        scheduled issuance re-arms it.
+        """
+        if issue_epoch_sec is None or duration_sec is None:
+            log.debug(
+                "token issuance carried no tokenV3IssueResult schedule; "
+                "clearing any stale renewal schedule (proactive renewal disarmed)"
+            )
+            self.token_schedule = None
+            self._t.tokens.token_issue_time_epoch_sec = None
+            self._t.tokens.duration_until_refresh_sec = None
+            self._t.tokens.refresh_api_retry_policy = None
+            return None
+        schedule: dict[str, Any] = {
+            "tokenIssueTimeEpochSec": issue_epoch_sec,
+            "durationUntilRefreshInSec": duration_sec,
+        }
+        if isinstance(retry_policy, dict):
+            schedule["refreshApiRetryPolicy"] = retry_policy
+        self.token_schedule = schedule
+        # Mirror onto Tokens so Session.from_tokens persists the schedule
+        # without consulting the auth layer.
+        self._t.tokens.token_issue_time_epoch_sec = issue_epoch_sec
+        self._t.tokens.duration_until_refresh_sec = duration_sec
+        self._t.tokens.refresh_api_retry_policy = (
+            retry_policy if isinstance(retry_policy, dict) else None
+        )
+        if self.on_token_issued is not None:
+            try:
+                self.on_token_issued(schedule)
+            except Exception:  # pragma: no cover - hooks must never break a call
+                log.warning("on_token_issued hook failed", exc_info=True)
+        return schedule
 
     def logout(self) -> Any:
         """``Talk.AuthService.logoutV2``.
@@ -886,3 +1152,11 @@ class AuthFlows:
             self._t.tokens.certificate = result.certificate
         if result.mid:
             self._t.tokens.mid = result.mid
+        # Every successful login (email/QR) arms the proactive renewal —
+        # the extension's setTokenV3IssueResult runs for loginV2 and
+        # qrCodeLoginV2 results too.
+        self._set_token_schedule(
+            result.token_issue_time_epoch_sec,
+            result.duration_until_refresh_sec,
+            result.refresh_api_retry_policy,
+        )

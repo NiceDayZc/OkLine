@@ -10,7 +10,10 @@ detail via :pyattr:`OkLine.last` / :meth:`OkLine.dump`.
 from __future__ import annotations
 
 import logging
+import random
 import sys
+import threading
+import time
 from typing import Any, Callable
 
 from ._util import reconfigure_stdout_utf8
@@ -53,6 +56,15 @@ class OkLine(AllServices):
         (default ``True``).  Pass ``redact=False`` to reveal them.
     on_exchange:
         Optional callback invoked with each :class:`Exchange` as it completes.
+    auto_refresh_schedule:
+        Opt in to the extension's proactive token renewal (its ``tT`` class,
+        main.js @~1850300): a daemon :class:`threading.Timer` is armed to
+        fire at the absolute epoch ``tokenIssueTimeEpochSec +
+        durationUntilRefreshInSec`` after every login / token refresh, and
+        re-armed after each renewal.  A failed silent renewal only logs —
+        the old token keeps working until a 119/401 triggers the defensive
+        refresh path.  Cancelled by :meth:`close` /
+        :meth:`cancel_refresh_schedule`.
     """
 
     def __init__(
@@ -68,6 +80,7 @@ class OkLine(AllServices):
         record_capacity: int = 500,
         redact: bool = True,
         on_exchange: Callable[[Exchange], None] | None = None,
+        auto_refresh_schedule: bool = False,
     ) -> None:
         tokens = Tokens(
             access_token=access_token,
@@ -95,6 +108,24 @@ class OkLine(AllServices):
         # When loaded from a session file, persist refreshed tokens back to it.
         self._session_path: str | None = None
 
+        # Proactive token renewal (the extension's tT class): a daemon
+        # threading.Timer armed after every token issuance, cancelled on
+        # close().  Opt-in — see the class docstring.
+        self._refresh_schedule_active = bool(auto_refresh_schedule)
+        self._refresh_timer: threading.Timer | None = None
+        self._refresh_timer_lock = threading.Lock()
+        if self._refresh_schedule_active:
+            self.auth.on_token_issued = self._on_token_issued
+
+        # Single-flight guard for the token-refresh path: the renewal Timer,
+        # the SSE keepalive ping thread and user threads can all reach
+        # refresh_access_token around the same token-expiry boundary.  The
+        # extension's tT class runs on the single-threaded JS event loop and
+        # cannot race itself; the port's threads need the lock so two
+        # concurrent tokenRefresh POSTs cannot interleave (see
+        # _refresh_tokens).
+        self._refresh_lock = threading.Lock()
+
         # Auto-refresh the access token on a 401 if we hold a refresh token.
         self.transport._refresh_hook = self._auto_refresh
 
@@ -114,14 +145,110 @@ class OkLine(AllServices):
         if not self.transport.tokens.refresh_token:
             return False
         try:
-            self.auth.refresh_access_token()
-            log.info("access token refreshed")
-            if self._session_path:  # persist the new token
-                self.save_tokens(self._session_path)
-            return True
+            self._refresh_tokens(self.transport.tokens.access_token)
         except Exception as exc:  # pragma: no cover - network
             log.warning("token refresh failed: %s", exc)
             return False
+        log.info("access token refreshed")
+        return True
+
+    def _refresh_tokens(self, stale_access_token: str | None) -> None:
+        """Single-flight token refresh, shared by :meth:`_auto_refresh` and
+        :meth:`_scheduled_renew`.
+
+        The renewal ``Timer`` fires at exactly the token-expiry boundary
+        where in-flight calls also start failing with 119/401, so both paths
+        can reach ``refresh_access_token`` concurrently.  The lock serializes
+        them and the stale-token check skips the second POST: a caller that
+        waited on the lock while another thread completed a refresh sees the
+        token already rotated and adopts that refresh's outcome — the slower
+        of two concurrent responses would otherwise overwrite the newer
+        rotated pair, and a single-used refresh token would fail with a
+        spurious 10201 hard-kickout.  Raises on refresh failure (the callers
+        log and keep the old token)."""
+        with self._refresh_lock:
+            if (
+                stale_access_token is not None
+                and self.transport.tokens.access_token != stale_access_token
+            ):
+                log.debug("token already refreshed by a concurrent call")
+                return
+            self.auth.refresh_access_token()
+            if self._session_path:  # persist the new token
+                self.save_tokens(self._session_path)
+
+    # -- proactive token-renewal schedule (the extension's tT class) ---------
+    def _on_token_issued(self, schedule: dict) -> None:
+        """on_token_issued hook: (re-)arm the renewal timer for a fresh
+        tokenV3IssueResult schedule.  Must never raise (it runs inside login
+        and refresh call sites)."""
+        if not self._refresh_schedule_active:
+            return
+        try:
+            self._schedule_token_refresh(schedule)
+        except Exception:  # pragma: no cover - scheduling must never break a login
+            log.warning("proactive token-refresh scheduling failed", exc_info=True)
+
+    def _schedule_token_refresh(self, schedule: dict) -> None:
+        """Arm the one-shot renewal timer to fire at the absolute epoch
+        ``tokenIssueTimeEpochSec + durationUntilRefreshInSec`` — the
+        extension's ``setTokenV3IssueResult`` (main.js @~1850660) computes a
+        due-epoch-minus-now delay: ``setTimeout(renewToken, (issue +
+        duration) * 1000 - RI(1))``, where ``RI(1)`` is its server-clock-
+        aligned *current* time in ms (ceiled), not a jitter term.  The port
+        approximates the same due-minus-now delay on the local clock
+        (``fire_at - time.time()``) plus a random 0-1 s early margin that is
+        a port-side addition, not in the bundle.  Any previously armed timer
+        is cancelled first."""
+        issue = schedule.get("tokenIssueTimeEpochSec")
+        duration = schedule.get("durationUntilRefreshInSec")
+        if issue is None or duration is None:
+            return
+        fire_at = float(issue) + float(duration)  # epoch seconds
+        delay = fire_at - time.time() - random.uniform(0.0, 1.0)
+        timer = threading.Timer(max(delay, 0.0), self._scheduled_renew)
+        timer.daemon = True
+        with self._refresh_timer_lock:
+            if self._refresh_timer is not None:
+                self._refresh_timer.cancel()
+            self._refresh_timer = timer
+        timer.start()
+        log.debug(
+            "proactive token renewal armed in %.1fs (fires at %d)",
+            max(delay, 0.0),
+            int(fire_at),
+        )
+
+    def _scheduled_renew(self) -> None:
+        """Timer body: silently renew the token.  Never raises — a failed
+        renewal only logs, leaving the old token working until a 119/401
+        triggers the defensive refresh path in :meth:`_auto_refresh`."""
+        if not self._refresh_schedule_active:
+            return  # cancelled (e.g. close()) between arming and firing
+        try:
+            self._refresh_tokens(self.transport.tokens.access_token)
+        except Exception:  # pragma: no cover - network
+            log.warning(
+                "scheduled token renewal failed; keeping the old token "
+                "(the 119/401 defensive refresh path still applies)",
+                exc_info=True,
+            )
+            return
+        log.info("access token renewed by the background schedule")
+        # The extension's tT.renewToken reconnects its operation stream
+        # after a successful renewal when it was open (``sdk.readyState
+        # === ReadyState.OPENED && t.connect()``): tear the active SSE
+        # connection down so the stream loop reopens with the new token.
+        self.ops.request_reconnect()
+
+    def cancel_refresh_schedule(self) -> None:
+        """Cancel the armed background token-renewal timer (if any) and
+        deactivate the schedule — no new timers are armed afterwards."""
+        self._refresh_schedule_active = False
+        with self._refresh_timer_lock:
+            if self._refresh_timer is not None:
+                self._refresh_timer.cancel()
+                self._refresh_timer = None
 
     # -- session persistence -------------------------------------------------
     def save_tokens(self, path: str | None = None) -> None:
@@ -137,6 +264,10 @@ class OkLine(AllServices):
         if not path:
             raise ValueError("no path given and no session file attached")
         self._session_path = path
+        # Session.from_tokens carries the renewal schedule from the Tokens
+        # dataclass (maintained by AuthFlows._set_token_schedule on every
+        # login/refresh), so from_tokens_file(+auto_refresh_schedule=True)
+        # can re-arm the timer without a fresh login.
         s = Session.from_tokens(self.transport.tokens)
         try:
             if self.e2ee.is_ready():
@@ -163,6 +294,20 @@ class OkLine(AllServices):
             **kw,
         )
         api._session_path = path
+        if (
+            s.token_issue_time_epoch_sec is not None
+            and s.duration_until_refresh_sec is not None
+        ):
+            # Restore the renewal schedule recorded by save_tokens, so the
+            # proactive renewal (auto_refresh_schedule=True) can be armed
+            # right away — the extension does the same on startup from its
+            # persisted tokenV3IssueResult.  _set_token_schedule records it
+            # on AuthFlows/Tokens *and* fires the on_token_issued hook.
+            api.auth._set_token_schedule(
+                s.token_issue_time_epoch_sec,
+                s.duration_until_refresh_sec,
+                s.refresh_api_retry_policy,
+            )
         if s.e2ee:
             try:
                 api.e2ee.load_from_export(s.e2ee)
@@ -318,7 +463,9 @@ class OkLine(AllServices):
 
     # -- lifecycle -----------------------------------------------------------
     def close(self) -> None:
-        """Release the LTSM Node bridge subprocess (if started)."""
+        """Release the LTSM Node bridge subprocess (if started) and cancel
+        the background token-renewal timer (if armed)."""
+        self.cancel_refresh_schedule()
         signer = getattr(self.transport, "_signer", None)
         if signer is not None:
             signer.close()

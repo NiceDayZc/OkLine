@@ -187,8 +187,14 @@ class Bot:
             log.exception("handler %s failed: %s", getattr(fn, "__name__", fn), exc)
 
     # -- run loop ------------------------------------------------------------
-    def run(self, *, reconnect: bool = True) -> None:
-        """Stream operations and dispatch them. Blocks until interrupted."""
+    def run(self, *, reconnect: bool = True, keepalive: bool = False) -> None:
+        """Stream operations and dispatch them. Blocks until interrupted.
+
+        ``keepalive=True`` enables the SSE keepalive pings (a daemon thread
+        issuing ``getServerTime`` every ~20 s while the stream is active —
+        the extension's PingInterceptor); see
+        :meth:`okline.operations.OperationReceiver.stream`.
+        """
         if not self._self_mid:
             try:
                 prof = self.api.get_profile()
@@ -196,5 +202,5 @@ class Bot:
             except Exception:  # pragma: no cover - network
                 pass
         log.info("bot running as %s", self._self_mid or "unknown")
-        for op in self.api.ops.iter_operations(reconnect=reconnect):
+        for op in self.api.ops.iter_operations(reconnect=reconnect, keepalive=keepalive):
             self.dispatch(op)

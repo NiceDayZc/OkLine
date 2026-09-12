@@ -100,7 +100,10 @@ def example_send(api: OkLine, to: str) -> None:
 # ---------------------------------------------------------------------------
 def example_receive(api: OkLine) -> None:
     print("listening for operations (Ctrl-C to stop)...")
-    for op in api.ops.iter_operations():
+    # keepalive=True: ping getServerTime every ~20 s while streaming (the
+    # extension's PingInterceptor); the stream also reconnects with
+    # exponential backoff (1 s doubling, capped at 60 s) on failed connects.
+    for op in api.ops.iter_operations(keepalive=True):
         if op.type == enums.OpType.RECEIVE_MESSAGE and op.message:
             msg = op.message
             print(f"[{msg.get('from')}] -> {msg.get('text')!r}")

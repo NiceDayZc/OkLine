@@ -131,7 +131,10 @@ bot = Bot(api, ignore_self=True, auto_mark_read=False)
 
 Handler exceptions are caught and logged, so one bad handler never kills the
 loop. `bot.run()` blocks and reconnects automatically; pass
-`bot.run(reconnect=False)` to stop after a disconnect.
+`bot.run(reconnect=False)` to stop after a disconnect, or
+`bot.run(keepalive=True)` to enable the SSE keepalive pings (a ~20 s
+`getServerTime` heartbeat while streaming — see
+[Receiving events](./receiving-events.md#keepalive-pings-keepalivetrue)).
 
 ## Under the hood
 

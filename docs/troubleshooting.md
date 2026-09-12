@@ -122,6 +122,24 @@ latest version (`pip install -U okline`).
 - If the session was revoked (logged out on another device), log in again
   (`okline login`).
 
+## `LineAuthError` on refresh — 10201 / 10202 (`tokenRefresh` codes)
+
+The `/api/auth/tokenRefresh` endpoint answers with its own gateway envelope
+codes (the `qU` family), not TalkException codes:
+
+- **10201 `AUTH_INVALID_REQUEST`** — a hard kickout: the refresh token is no
+  longer valid (session revoked / logged out elsewhere). OkLine raises
+  `LineAuthError("token refresh rejected (AUTH_INVALID_REQUEST): re-login
+  required")`. Nothing recovers from this — log in again (`okline login`).
+- **10202 `AUTH_RETRY_REQUIRED`** — the server is temporarily unwilling to
+  refresh and asks the client to retry. `refresh_access_token()` retries with
+  the server-provided `refreshApiRetryPolicy` (jittered exponential backoff,
+  capped at `maxDelayInMillis`) — see
+  [Token refresh](./authentication.md#refresh-retries-10202-and-kickout-10201).
+  If the retries are exhausted you get a `LineAuthError`; wait and refresh
+  again, and consider `OkLine(..., auto_refresh_schedule=True)` so renewal
+  happens proactively before the token goes stale.
+
 ## `LineMustUpgradeError` / `REQUEST_MUST_UPGRADE`
 
 The server wants a newer client version. The trigger is the **outer envelope

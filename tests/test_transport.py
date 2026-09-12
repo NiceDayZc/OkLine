@@ -16,6 +16,13 @@ These exercise the low-level request engine that every Thrift service shares:
   (86 is E2EE_INVALID_VERSION, a plain error), inner 119 -> renew-and-retry,
   outer 99999 / inner 115 -> retried within the ``max_retries`` budget,
   outer 10052 surfacing the nested ``statusCode`` / ``rejectionReason``,
+* talk-auth interceptor scoping: the auth classification (codes {1,7,8}) and
+  the 119 renew-and-retry only apply to ``/api/talk/thrift/Talk*`` URLs minus
+  the ChannelService / E2EEKeyBackupService sub-services; the same codes on
+  Chat/Relation/... paths are plain ``LineApiError``, and the per-request
+  ``ignore_auth_exception`` / ``ignore_must_upgrade`` opt-outs (the
+  extension's ``ignoreTalkAuthException`` / ``ignoreMustUpgrade`` flags)
+  suppress the corresponding classification,
 * the ``_safe_json`` helper,
 * recording integration (``api.history`` / ``api.last`` grow per call),
 * ``LineLoginRequired`` when ``require_auth`` is set but no token is held.
@@ -45,11 +52,21 @@ from okline.transport import (
     LineConfig,
     Tokens,
     Transport,
+    _talk_auth_scoped,
 )
 
 # A real Thrift endpoint key used throughout for ``call``-based tests.
 PROFILE = "Talk.TalkService.getProfile"
 PROFILE_PATH = "/api/talk/thrift/Talk/TalkService/getProfile"
+
+# Real endpoint keys / paths that sit OUTSIDE the talk-auth interceptor's
+# /api/talk/thrift/Talk* scope (or inside one of its exclusions).
+CHANNEL = "Talk.ChannelService.issueChannelToken"  # excluded sub-service
+CHANNEL_PATH = "/api/talk/thrift/Talk/ChannelService/issueChannelToken"
+E2EE_BACKUP_PATH = "/api/talk/thrift/Talk/E2EEKeyBackupService/reissueE2EEKey"
+RELATION = "Relation.RelationService.addFriendByMid"  # different namespace
+RELATION_PATH = "/api/talk/thrift/Relation/RelationService/addFriendByMid"
+CHAT_PATH = "/api/talk/thrift/Chat/ChatService/acceptChatInvitation"
 
 # A non-gateway base (OBS) used to test the lenient non-gateway unwrap.
 OBS_URL = "https://obs.line-apps.com"
@@ -480,6 +497,249 @@ class TestMustUpgrade:
             t.call(PROFILE, [0])
         assert type(ei.value) is LineApiError
         assert ei.value.code == 86
+
+    def test_must_upgrade_is_not_path_scoped(self):
+        """The extension's upgrade interceptor has NO URL check (unlike the
+        talk-auth one): 10006 classifies as must-upgrade on every path."""
+        body = {"code": 10006, "message": "REQUEST_MUST_UPGRADE"}
+        t = make_transport(lambda m, u, kw: FakeResp(400, body))
+        with pytest.raises(LineMustUpgradeError):
+            t.call(RELATION, ["u1"])
+        t2 = make_transport(lambda m, u, kw: FakeResp(400, body))
+        with pytest.raises(LineMustUpgradeError):
+            t2.post_json(CHANNEL_PATH, [1])
+
+
+# ---------------------------------------------------------------------------
+# Talk-auth interceptor scoping (the extension's URL gate)
+# ---------------------------------------------------------------------------
+class TestTalkAuthScope:
+    """The talk-auth interceptor (gateway axios client, VD factory in
+    main.js) only runs for URLs starting with /api/talk/thrift/Talk — the
+    ChannelService and E2EEKeyBackupService sub-services under that same
+    Talk namespace are explicitly excluded.  Outside the scope, inner codes
+    {1,7,8} and 119 are plain ``LineApiError``."""
+
+    @pytest.mark.parametrize(
+        "path,scoped",
+        [
+            (PROFILE_PATH, True),
+            ("/api/talk/thrift/Talk/AuthService/loginV2", True),
+            ("/api/talk/thrift/Talk/MessageService/sendMessage", True),
+            (CHANNEL_PATH, False),  # excluded sub-service under Talk/
+            (E2EE_BACKUP_PATH, False),  # excluded sub-service under Talk/
+            (CHAT_PATH, False),  # Chat namespace never matches the prefix
+            (RELATION_PATH, False),
+            ("/api/talk/thrift/LoginQrCode/SecondaryQrCodeLoginService/createSession", False),
+            ("/api/auth/tokenRefresh", False),
+            ("/api/timeline/homeId", False),
+            ("/r/talk/m/oid", False),
+        ],
+    )
+    def test_scope_predicate_matches_extension_condition(self, path, scoped):
+        assert _talk_auth_scoped(path) is scoped
+
+    @pytest.mark.parametrize("code", [1, 7, 8])
+    def test_auth_code_on_talk_path_is_auth_error(self, code):
+        """In scope (v2.8.0 behaviour preserved): codes {1,7,8} on a Talk
+        path classify as LineAuthError."""
+        t = make_transport(lambda m, u, kw: talk_exc(code, "auth problem"))
+        with pytest.raises(LineAuthError) as ei:
+            t.call(PROFILE, [0])
+        assert ei.value.code == code
+
+    @pytest.mark.parametrize("code", [1, 7, 8])
+    def test_auth_code_on_channel_service_path_is_plain_api_error(self, code):
+        """Talk/ChannelService is excluded by name even though it sits under
+        the /api/talk/thrift/Talk prefix."""
+        t = make_transport(lambda m, u, kw: talk_exc(code, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.call(CHANNEL, [1])
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == code
+
+    def test_auth_code_on_e2ee_key_backup_path_is_plain_api_error(self):
+        """Talk/E2EEKeyBackupService is the other named exclusion."""
+        t = make_transport(lambda m, u, kw: talk_exc(8, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.post_json(E2EE_BACKUP_PATH, [])
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == 8
+
+    @pytest.mark.parametrize("code", [1, 7, 8])
+    def test_auth_code_on_relation_path_is_plain_api_error(self, code):
+        """Relation (like Chat/Buddy/...) does not match the Talk prefix."""
+        t = make_transport(lambda m, u, kw: talk_exc(code, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.call(RELATION, ["u1"])
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == code
+
+    def test_auth_code_on_chat_namespace_path_is_plain_api_error(self):
+        t = make_transport(lambda m, u, kw: talk_exc(1, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.post_json(CHAT_PATH, [])
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == 1
+
+    def test_http_403_is_auth_error_even_outside_scope(self):
+        """The HTTP 401/403 -> LineAuthError mapping is a port-level
+        convenience (the extension's interceptors never look at the HTTP
+        status), so it stays unscoped."""
+        t = make_transport(lambda m, u, kw: FakeResp(403, {"error": {"message": "no"}}))
+        with pytest.raises(LineAuthError):
+            t.call(RELATION, ["u1"])
+
+    def test_119_outside_scope_never_renews(self):
+        """The 119 renew-and-retry lives inside the (scoped) talk-auth
+        interceptor: on a Relation path it is a plain error, the refresh hook
+        is never invoked and the request is not replayed."""
+        calls: list = []
+
+        def _refresh() -> bool:
+            calls.append(1)
+            return True
+
+        t = make_transport(lambda m, u, kw: talk_exc(119, "MUST_REFRESH_V3_TOKEN"))
+        t._refresh_hook = _refresh
+        with pytest.raises(LineApiError) as ei:
+            t.call(RELATION, ["u1"])
+        assert type(ei.value) is LineApiError  # not LineAuthError
+        assert ei.value.code == 119
+        assert calls == []
+        assert len(t.session.calls) == 1
+
+    def test_119_on_excluded_channel_service_path_never_renews(self):
+        calls: list = []
+
+        def _refresh() -> bool:
+            calls.append(1)
+            return True
+
+        t = make_transport(lambda m, u, kw: talk_exc(119, "MUST_REFRESH_V3_TOKEN"))
+        t._refresh_hook = _refresh
+        with pytest.raises(LineApiError) as ei:
+            t.call(CHANNEL, [1])
+        assert type(ei.value) is LineApiError
+        assert calls == []
+        assert len(t.session.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Per-request opt-outs (ignoreTalkAuthException / ignoreMustUpgrade)
+# ---------------------------------------------------------------------------
+class TestErrorOptOuts:
+    """``ignore_auth_exception`` / ``ignore_must_upgrade`` mirror the
+    extension's per-request axios flags: when set, the corresponding
+    classification is suppressed and a plain ``LineApiError`` is raised."""
+
+    def test_ignore_auth_exception_suppresses_auth_classification(self):
+        t = make_transport(lambda m, u, kw: talk_exc(1, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0], ignore_auth_exception=True)
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == 1
+
+    def test_ignore_auth_exception_on_post_json(self):
+        t = make_transport(lambda m, u, kw: talk_exc(8, "auth problem"))
+        with pytest.raises(LineApiError) as ei:
+            t.post_json(PROFILE_PATH, [], ignore_auth_exception=True)
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == 8
+
+    def test_ignore_auth_exception_suppresses_119_renew_and_retry(self):
+        """The extension checks ignoreTalkAuthException before anything else
+        in its talk-auth interceptor, so the flag also disables the 119
+        renew+replay (plain LineApiError, no hook call, no replay)."""
+        calls: list = []
+
+        def _refresh() -> bool:
+            calls.append(1)
+            return True
+
+        t = make_transport(lambda m, u, kw: talk_exc(119, "MUST_REFRESH_V3_TOKEN"))
+        t._refresh_hook = _refresh
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0], ignore_auth_exception=True)
+        assert type(ei.value) is LineApiError  # not LineAuthError
+        assert calls == []
+        assert len(t.session.calls) == 1
+
+    def test_ignore_must_upgrade_suppresses_upgrade_classification(self):
+        body = {"code": 10006, "message": "REQUEST_MUST_UPGRADE"}
+        t = make_transport(lambda m, u, kw: FakeResp(400, body))
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0], ignore_must_upgrade=True)
+        assert type(ei.value) is LineApiError
+        assert ei.value.code == 10006
+        assert ei.value.reason == "REQUEST_MUST_UPGRADE"
+
+    def test_ignore_must_upgrade_falls_through_to_auth_classification(self):
+        """With the upgrade branch opted out, an in-scope auth code still
+        classifies (the extension runs its talk-auth interceptor first)."""
+        t = make_transport(lambda m, u, kw: talk_exc(1, "auth problem", outer_code=10006))
+        with pytest.raises(LineAuthError) as ei:
+            t.call(PROFILE, [0], ignore_must_upgrade=True)
+        assert ei.value.code == 1
+
+    def test_opt_outs_forwarded_through_401_refresh_retry(self):
+        """The extension replays ``r(e.config)`` — same config, flags
+        included — so the HTTP-401 refresh-retry must forward them too."""
+        calls: list = []
+        responses = [
+            FakeResp(401, {"error": {"code": 8, "message": "expired"}}),
+            FakeResp(400, {"code": 10006, "message": "REQUEST_MUST_UPGRADE"}),
+        ]
+
+        def responder(m, u, kw):
+            return responses.pop(0)
+
+        def _refresh() -> bool:
+            calls.append(1)
+            t.tokens.access_token = "TKN2"
+            return True
+
+        t = make_transport(responder)
+        t._refresh_hook = _refresh
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0], ignore_must_upgrade=True)
+        assert type(ei.value) is LineApiError  # replayed 10006 did not upgrade
+        assert calls == [1]
+        assert len(t.session.calls) == 2
+
+    def test_opt_outs_forwarded_through_119_refresh_retry(self):
+        """Same forwarding for the 119 renew-and-replay path."""
+        calls: list = []
+        responses = [
+            talk_exc(119, "MUST_REFRESH_V3_TOKEN"),
+            FakeResp(400, {"code": 10006, "message": "REQUEST_MUST_UPGRADE"}),
+        ]
+
+        def responder(m, u, kw):
+            return responses.pop(0)
+
+        def _refresh() -> bool:
+            calls.append(1)
+            t.tokens.access_token = "TKN2"
+            return True
+
+        t = make_transport(responder)
+        t._refresh_hook = _refresh
+        with pytest.raises(LineApiError) as ei:
+            t.call(PROFILE, [0], ignore_must_upgrade=True)
+        assert type(ei.value) is LineApiError  # replayed 10006 did not upgrade
+        assert calls == [1]
+        assert len(t.session.calls) == 2
+
+    def test_defaults_preserve_v280_classification(self):
+        """Backwards compatibility: with no flags, in-scope behaviour is
+        exactly the v2.8.0 classification (auth / 119 / upgrade)."""
+        t = make_transport(lambda m, u, kw: talk_exc(1, "auth problem"))
+        with pytest.raises(LineAuthError):
+            t.call(PROFILE, [0])
+        t2 = make_transport(lambda m, u, kw: talk_exc(119, "MUST_REFRESH_V3_TOKEN"))
+        with pytest.raises(LineAuthError):
+            t2.call(PROFILE, [0])
 
 
 class TestResponseHttpError:

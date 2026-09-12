@@ -4,12 +4,112 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-09-12
+
+A **parity-completion release**: the four items 2.8.0 listed as *not ported*
+are now ported from the live 3.7.2 bundle — all additive, and opt-in wherever
+they introduce background behaviour.
+
+### Token-refresh lifecycle (the extension's `tT` class, main.js @~1850300)
+- **Proactive renewal schedule** — `OkLine(..., auto_refresh_schedule=True)`
+  arms a daemon `threading.Timer` to fire at the absolute epoch
+  `tokenIssueTimeEpochSec + durationUntilRefreshInSec` after every login and
+  every tokenRefresh response (a due-epoch-minus-now delay, like the
+  extension's `setTimeout(renewToken, (issue + duration) * 1000 - RI(1))`
+  where `RI(1)` is its server-clock-aligned now), re-arms itself after each
+  renewal, persists through the session file (camelCase keys; pre-2.9 files
+  still load), and is cancelled by `close()` / `cancel_refresh_schedule()`
+  (with a stale-fire guard). A schedule-less issuance *clears* any previously
+  stored schedule (the extension's clear step), so no stale retry policy or
+  fire time survives into the next refresh or the session file. A failed
+  silent renewal only logs — the old token keeps working until the reactive
+  119/401 defensive path fires. The defensive refresh and the scheduled
+  renewal share a single-flight lock: a caller arriving mid-refresh waits,
+  sees the already-rotated token and never issues a second `tokenRefresh`
+  POST (the extension's single-threaded `tT` cannot race itself; the port's
+  Timer/ping threads can). `Session.save` is now atomic (temp file +
+  `os.replace`), so concurrent token persistence cannot corrupt the file.
+- **SSE reconnect after renewal** — a successful scheduled renewal tears the
+  active operation stream down and reopens it with the fresh token
+  (`OperationReceiver.request_reconnect()`, mirroring the extension's
+  `readyState === ReadyState.OPENED && t.connect()`); a no-op when no
+  reconnecting stream is active.
+- **AUTH_RETRY_REQUIRED (10202) retry policy** — `refresh_access_token()`
+  parses the stored `refreshApiRetryPolicy` (new exported
+  `RefreshApiRetryPolicy` dataclass; sane defaults for the bundle's
+  empty-string/zero placeholders) and retries 10202 with jittered
+  exponential backoff (`initialDelayInMillis * multiplier**n`, each sleep
+  jittered by `jitterRate`, capped at `maxDelayInMillis` — the tT.renewToken
+  loop, attempt for attempt; the sleeps are blocking). Both delays are
+  clamped client-side at `REFRESH_RETRY_DELAY_CAP_MS` (60 s): unlike the
+  extension's async promise, our sleeps block the calling thread, so the
+  server cannot park it arbitrarily. Without a stored
+  policy the pre-2.9 single-attempt behaviour applies.
+- **AUTH_INVALID_REQUEST (10201) hard kickout** — surfaces as
+  `LineAuthError("token refresh rejected (AUTH_INVALID_REQUEST): re-login
+  required")`, terminal.
+- The 10201/10202 gateway-envelope constants now live once in
+  `transport.py`'s `qU`-enum block (imported by `auth.py`): they are *not*
+  TalkException codes, so they are deliberately absent from
+  `enums.ErrorCode` and `exceptions._AUTH_CODES` — the talk-auth interceptor
+  never classifies them. The renewal schedule is mirrored onto the `Tokens`
+  dataclass (maintained by `AuthFlows._set_token_schedule`), which is how
+  `Session.from_tokens` persists it.
+
+### Talk-auth interceptor opt-outs + path scope (per-request)
+- `Transport.call/post_json(..., ignore_auth_exception=True)` mirrors the
+  extension's `ignoreTalkAuthException`; `ignore_must_upgrade=True` mirrors
+  `ignoreMustUpgrade`. Both flags survive the 401- and 119-refresh replays
+  (the extension replays `r(e.config)` with the same config).
+- Talk-auth classification (inner codes 1/7/8 → `LineAuthError`, and the 119
+  renew-and-retry) is now **path-scoped** exactly like the bundle's
+  interceptor: `/api/talk/thrift/Talk*` URLs minus the `Talk/ChannelService`
+  and `Talk/E2EEKeyBackupService` sub-services; outside that scope those
+  codes raise plain `LineApiError` and 119 never renews.
+- Per bundle evidence the must-upgrade interceptor has **no** URL check (only
+  the flag), so `LineMustUpgradeError` stays unscoped on all paths;
+  `ignoreGlobalAlert` gates a UI-alert interceptor and has no analogue.
+
+### SSE keepalive + reconnect backoff
+- `stream() / iter_operations(..., keepalive=True)` (opt-in, default off): a
+  daemon thread pings `Talk.TalkService.getServerTime` every ~20 s while the
+  generator is active (the PingInterceptor's `2e4` ms interval), stopped on
+  close/exhaustion, surviving ping failures — and the interceptor's *silence
+  watchdog* is armed as a per-read socket timeout of interval + spare (30 s)
+  on the streamed GET, so a quietly dead connection (NAT/middlebox timeout,
+  no FIN) raises out of `iter_lines` and is reopened with the `localRev`
+  cursor, exactly the interceptor's reopen. `Bot.run(keepalive=True)` and
+  `example.py` pass it through.
+- Reconnect backoff ported from the extension's `sT.connect`
+  (`min(2**a * 1e3, 6e5)` ms): consecutive failed connections wait
+  `min(2**n * backoff_start, backoff_max)` seconds (defaults 1 s → 60 s;
+  `backoff_max=600` for exact bundle parity, `backoff_start=0` restores the
+  pre-2.9 immediate reconnect), while a connection that yielded at least one
+  event resets the counter and reconnects immediately.
+
+### Residue (deliberate, bundle-verified deviations)
+- The keepalive pings are `getServerTime` requests rather than EventSource
+  ping frames (`requests` has no such frame); the interceptor's
+  silence-watchdog half *is* ported, via the per-read socket timeout above.
+- The reconnect backoff retries forever; the bundle gives up after 144
+  consecutive attempts.
+- HTTP 401/403 → `LineAuthError` remains a port-level convenience on all
+  paths (the extension's interceptors never inspect HTTP status), as does
+  SSE header auth.
+
+Docs: authentication (schedule + retry policy), receiving-events (backoff,
+keepalive, mid-stream renewal), architecture (token-refresh lifecycle),
+troubleshooting (10201/10202). 691 tests, all offline (the 16 real-bridge
+tests in `test_hmac_bridge.py` skip, and the count drops to 675, when
+Node.js is unavailable).
+
 ## [2.8.0] - 2026-09-12
 
 A **drift-fix release**: the core of every surviving finding from a full
 re-audit against the live extension bundle (3.7.2 `main.js`, byte-exact
-re-extraction at every offset) has been fixed. Explicitly **not ported**
-(documented deviations, verified against the bundle): the extension's
+re-extraction at every offset) has been fixed. Explicitly **not ported** at
+the time (all four items were subsequently ported in [2.9.0]; documented
+deviations, verified against the bundle): the extension's
 *proactive* token-refresh scheduler (`setTimeout(renewToken)` at
 `tokenIssueTimeEpochSec + durationUntilRefreshInSec` — renewal here stays
 reactive on inner code 119), the `renewToken` retry policy

@@ -99,9 +99,20 @@ class LineLoginRequired(LineAuthError):
 # Matches the extension's talk-auth interceptor (iM in main.js):
 #   1 AUTHENTICATION_FAILED, 7 NOT_AVAILABLE_USER (deleted account),
 #   8 NOT_AUTHORIZED_DEVICE.
+# The classification is path-scoped exactly like that interceptor: it only
+# applies to /api/talk/thrift/Talk* URLs, excluding the Talk/ChannelService
+# and Talk/E2EEKeyBackupService sub-services (see
+# okline.transport._talk_auth_scoped); outside that scope these codes raise
+# plain LineApiError, and callers can also suppress the classification per
+# request via Transport.call/post_json ``ignore_auth_exception=True`` (the
+# extension's ``ignoreTalkAuthException`` flag).
 # Deliberately NOT in the set: 0 ILLEGAL_ARGUMENT (an ordinary request error),
 # 119 MUST_REFRESH_V3_TOKEN (handled by the renew-and-retry path in
-# Transport.post_json, surfacing as LineAuthError only if renewal fails).
+# Transport.post_json, surfacing as LineAuthError only if renewal fails), and
+# the /api/auth/tokenRefresh envelope codes 10201 AUTH_INVALID_REQUEST /
+# 10202 AUTH_RETRY_REQUIRED (the qU family, not TalkException codes — the
+# talk-auth interceptor never classifies them; they are handled by
+# AuthFlows.refresh_access_token's kickout / retry-policy backoff).
 _AUTH_CODES = {
     1,
     7,

@@ -118,6 +118,55 @@ for op in api.ops.iter_operations(reconnect=False):
     handle(op)
 ```
 
+## Reconnect backoff
+
+Consecutive *failed* connections (an open error, or a connection that yields no
+events at all) back off exponentially before the next attempt:
+`min(2**n * backoff_start, backoff_max)` seconds — 1 s, 2 s, 4 s, … capped at
+60 s by default (the extension caps at 600 s; pass
+`OperationReceiver(..., backoff_max=600)` for exact parity). A connection that
+yielded at least one event resets the counter, so a stream that *was* healthy
+reconnects immediately. Tune or disable on the receiver:
+
+```python
+from okline.operations import OperationReceiver
+
+api.ops = OperationReceiver(api.transport, backoff_start=1.0, backoff_max=60.0)
+# backoff_start=0 restores immediate reconnects (pre-2.9 behaviour)
+```
+
+> **Deviation:** the extension gives up after 144 consecutive failed attempts;
+> OkLine keeps retrying forever with the capped delay.
+
+## Keepalive pings (`keepalive=True`)
+
+The extension wires a ping interceptor onto its SSE transport (a 20 s interval
+with a 10 s spare window). Python `requests` has no EventSource ping frame, so
+the port runs a daemon thread that issues a cheap `getServerTime` call every
+~20 s while the stream is active. It is **opt-in** — the pings are real
+requests that share the HTTP session and the rate-limiter budget:
+
+```python
+for op in api.ops.iter_operations(keepalive=True):
+    handle(op)
+
+# or on the Bot framework
+bot.run(keepalive=True)
+```
+
+The thread starts with the first event, survives reconnects, is stopped when
+the generator is closed or exhausted, and never kills the stream on a failed
+ping.
+
+## Mid-stream token renewal
+
+If you enabled the [proactive token-renewal schedule](./authentication.md#proactive-renewal-schedule-auto_refresh_schedule),
+a successful background renewal tears the active SSE connection down and
+reopens it with the fresh token (`OperationReceiver.request_reconnect()` —
+the extension's `tT.renewToken` does `readyState === OPENED && connect()`).
+You never need to call it yourself unless you refresh the token by other means
+mid-stream; it is a no-op when no reconnecting stream is active.
+
 ## Long-poll utility endpoints
 
 The `LF1`/`JQ` long-poll endpoints are **login PIN-verification** polls in the

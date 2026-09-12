@@ -175,6 +175,43 @@ soon as a refresh token is present):
 api = OkLine(access_token="...", refresh_token="...")
 ```
 
+### Proactive renewal schedule (`auto_refresh_schedule`)
+
+Every login and token-refresh response carries a `tokenV3IssueResult` telling
+the client when the token should be renewed
+(`tokenIssueTimeEpochSec` + `durationUntilRefreshInSec`). The extension arms a
+`setTimeout(renewToken, ...)` on every issuance (its `tT` class); OkLine ports
+that as an opt-in background timer:
+
+```python
+api = OkLine.from_tokens_file("tokens.json", auto_refresh_schedule=True)
+# or OkLine(..., auto_refresh_schedule=True)
+```
+
+With the flag set, a daemon `threading.Timer` is armed after every login and
+every refresh (minus up to ~1 s of jitter, matching the extension), silently
+renews the token when it fires, re-arms itself from the new schedule, and —
+when the client came from a session file — saves the refreshed token back to
+it. A failed silent renewal only logs a warning: the old token keeps working
+until the reactive 119/401 refresh path fires. If an SSE operation stream is
+active, it is reconnected with the fresh token, exactly like the extension.
+The schedule persists in the session file (camelCase keys), so
+`from_tokens_file(..., auto_refresh_schedule=True)` re-arms the timer without
+a fresh login. Cancel it with `api.cancel_refresh_schedule()` (also called by
+`api.close()`).
+
+### Refresh retries (10202) and kickout (10201)
+
+`refresh_access_token()` follows the server-provided `refreshApiRetryPolicy`
+(recorded from the last login/refresh): if the refresh endpoint answers with
+gateway code **10202** (`AUTH_RETRY_REQUIRED`), the call is retried with the
+policy's jittered exponential backoff (`initialDelayInMillis * multiplier^n`,
+each sleep jittered by `jitterRate`, capped at `maxDelayInMillis`). Note the
+backoff sleeps are **blocking** — budget up to `maxDelayInMillis` per retry
+sequence. Gateway code **10201** (`AUTH_INVALID_REQUEST`) is a hard kickout:
+it raises `LineAuthError` and you must log in again. Without a stored policy
+the refresh is a single attempt (pre-2.9 behaviour).
+
 ---
 
 ## Logout

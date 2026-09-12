@@ -25,7 +25,7 @@ Reuse a token and paste every response:
 from __future__ import annotations
 
 from . import e2ee_crypto, entities, enums
-from .auth import AuthFlows, LoginResult
+from .auth import AuthFlows, LoginResult, RefreshApiRetryPolicy
 from .bot import Bot, EventContext, MessageContext
 from .client import LineApi, OkLine
 from .crypto import RSAKeyInfo, rsa_encrypt_credentials
@@ -64,7 +64,7 @@ from .transport import (
     Transport,
 )
 
-__version__ = "2.8.0"
+__version__ = "2.9.0"
 #: The LINE client version this library emulates.
 LINE_APP_VERSION = APP_VERSION
 
@@ -105,6 +105,7 @@ __all__ = [
     "RSAKeyInfo",
     "RateLimiter",
     "Recorder",
+    "RefreshApiRetryPolicy",
     "Room",
     "SSEEvent",
     "Session",

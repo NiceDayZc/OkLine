@@ -30,6 +30,10 @@ The success response is ``{"message": "OK", "data": <result>}`` — exactly
 else, including envelope-less 2xx bodies, is an error.  (Non-gateway bases —
 OBS/legy — legitimately return raw payloads and keep the lenient unwrap.)
 An application error carries a JSON body describing the Thrift exception.
+Error classification mirrors the extension's interceptor scope: the talk-auth
+classification (auth codes 1/7/8 and the 119 renew-and-retry) only applies to
+``/api/talk/thrift/Talk*`` URLs (minus ChannelService/E2EEKeyBackupService);
+see :func:`_talk_auth_scoped` and :meth:`Transport.post_json`.
 """
 
 from __future__ import annotations
@@ -85,13 +89,46 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-# Gateway envelope error codes — the extension's `qU` enum in main.js.
+# Gateway envelope error codes — the extension's `qU` enum in main.js
+# (~2089600).  10201/10202 are the /api/auth/tokenRefresh envelope codes the
+# extension's tT class reacts to (renewToken kickout / retry, main.js
+# ~1850300); they are NOT TalkException (mU) codes and never enter
+# ErrorCode/_AUTH_CODES — the talk-auth interceptor never classifies them.
 _CODE_REQUEST_MUST_UPGRADE = 10006  # qU.REQUEST_MUST_UPGRADE
 _CODE_RESPONSE_HTTP_ERROR = 10052  # qU.RESPONSE_HTTP_ERROR
+_CODE_AUTH_INVALID_REQUEST = 10201  # qU.AUTH_INVALID_REQUEST (refresh kickout)
+_CODE_AUTH_RETRY_REQUIRED = 10202  # qU.AUTH_RETRY_REQUIRED (refresh retry)
 _CODE_UNKNOWN_ERROR = 99999  # qU.UNKNOWN_ERROR
 # TalkException codes — the extension's `mU` enum in main.js.
 _CODE_SHOULD_RETRY = 115  # mU.SHOULD_RETRY
 _CODE_MUST_REFRESH_V3_TOKEN = 119  # mU.MUST_REFRESH_V3_TOKEN
+
+# The talk-auth response interceptor (on the gateway axios client built by the
+# `VD` factory in main.js) only runs for URLs starting with
+# /api/talk/thrift/Talk, and explicitly NOT for the ChannelService /
+# E2EEKeyBackupService sub-services that live under that same Talk namespace
+# (exact bundle condition: `url.startsWith("/api/talk/thrift/Talk")` minus the
+# two `startsWith` exclusions).  Inside that scope it classifies the inner
+# TalkException codes 1/7/8 (kickout -> LineAuthError) and 119 (renew + replay,
+# `iM` in main.js); outside it the same codes are ordinary LineApiErrors.
+_TALK_AUTH_SCOPE_PREFIX = "/api/talk/thrift/Talk"
+_TALK_AUTH_EXCLUDED_PREFIXES = (
+    "/api/talk/thrift/Talk/ChannelService",
+    "/api/talk/thrift/Talk/E2EEKeyBackupService",
+)
+
+
+def _talk_auth_scoped(path: str) -> bool:
+    """True when ``path`` is inside the talk-auth interceptor's URL scope.
+
+    This is the extension's exact gate: ``startsWith("/api/talk/thrift/Talk")``
+    minus the ``Talk/ChannelService`` and ``Talk/E2EEKeyBackupService``
+    sub-service exclusions.  Chat/Relation/Buddy/LoginQrCode/... namespaces do
+    not match the prefix and are therefore out of scope.
+    """
+    return path.startswith(_TALK_AUTH_SCOPE_PREFIX) and not path.startswith(
+        _TALK_AUTH_EXCLUDED_PREFIXES
+    )
 
 
 @dataclass
@@ -150,6 +187,15 @@ class Tokens:
     encrypted_access_tokens: dict[str, str] = field(default_factory=dict)
     mid: str | None = None
     certificate: str | None = None  # device certificate from login
+    # Proactive-renewal schedule of the last tokenV3IssueResult (the
+    # extension's tT class, main.js @~1850300): when the token was issued
+    # (epoch seconds), how long it stays fresh and the server's
+    # refreshApiRetryPolicy for 10202 retries.  Maintained by
+    # AuthFlows._set_token_schedule so Session.from_tokens can persist them
+    # without consulting the auth layer.
+    token_issue_time_epoch_sec: float | None = None
+    duration_until_refresh_sec: float | None = None
+    refresh_api_retry_policy: dict | None = None
 
 
 class _ErrorInfo(NamedTuple):
@@ -308,11 +354,17 @@ class Transport:
         require_auth: bool = True,
         extra_headers: Mapping[str, str] | None = None,
         allow_refresh: bool = True,
+        ignore_auth_exception: bool = False,
+        ignore_must_upgrade: bool = False,
     ) -> Any:
         """Invoke a Thrift method by its ``Namespace.Service.method`` key.
 
         ``args`` is the ordered list of positional Thrift arguments.  Returns
         the decoded JSON result, or raises a :class:`LineApiError` subclass.
+
+        ``ignore_auth_exception`` / ``ignore_must_upgrade`` mirror the
+        extension's per-request ``ignoreTalkAuthException`` /
+        ``ignoreMustUpgrade`` axios flags — see :meth:`post_json`.
         """
         path = ep.thrift_path(endpoint_key)
         return self.post_json(
@@ -322,6 +374,8 @@ class Transport:
             extra_headers=extra_headers,
             allow_refresh=allow_refresh,
             endpoint_key=endpoint_key,
+            ignore_auth_exception=ignore_auth_exception,
+            ignore_must_upgrade=ignore_must_upgrade,
         )
 
     def post_json(
@@ -334,7 +388,36 @@ class Transport:
         allow_refresh: bool = True,
         endpoint_key: str | None = None,
         base: str | None = None,
+        ignore_auth_exception: bool = False,
+        ignore_must_upgrade: bool = False,
     ) -> Any:
+        """POST a JSON body to ``path`` and decode the response.
+
+        Per-request error-classification opt-outs, mirroring the axios config
+        flags the extension reads in its gateway interceptors (main.js ``VD``
+        factory):
+
+        * ``ignore_auth_exception`` ↔ ``e.config.ignoreTalkAuthException``:
+          suppresses the talk-auth classification entirely — inner codes
+          {1,7,8} then raise a plain :class:`LineApiError` and inner 119 no
+          longer renews + replays (the extension checks this flag before
+          anything else in its talk-auth interceptor).
+        * ``ignore_must_upgrade`` ↔ ``e.config.ignoreMustUpgrade``: outer
+          envelope 10006 (REQUEST_MUST_UPGRADE) raises a plain
+          :class:`LineApiError` instead of :class:`LineMustUpgradeError`.
+
+        The talk-auth classification (auth codes {1,7,8} and the 119
+        renew-and-retry) is additionally *path-scoped* exactly like the
+        extension's interceptor: it only applies to URLs starting with
+        ``/api/talk/thrift/Talk`` — excluding the ``Talk/ChannelService`` and
+        ``Talk/E2EEKeyBackupService`` sub-services — so the same codes on
+        Chat/Relation/Buddy/LoginQrCode/... paths are plain
+        :class:`LineApiError` regardless of these flags.  The must-upgrade
+        classification is NOT path-scoped: the extension's upgrade
+        interceptor has no URL check, only the per-request flag above.  The
+        extension's third flag, ``ignoreGlobalAlert``, gates a UI-alert
+        interceptor and has no Python analogue.
+        """
         if require_auth and not self.tokens.access_token:
             raise LineLoginRequired("no access token; run a login flow first", path=path)
 
@@ -372,6 +455,8 @@ class Transport:
             ):
                 refreshed = True
                 if self._refresh_hook():
+                    # The extension replays r(e.config) — the same config,
+                    # opt-out flags included — so forward them here too.
                     return self.post_json(
                         path,
                         body,
@@ -380,10 +465,17 @@ class Transport:
                         allow_refresh=False,
                         endpoint_key=endpoint_key,
                         base=base,
+                        ignore_auth_exception=ignore_auth_exception,
+                        ignore_must_upgrade=ignore_must_upgrade,
                     )
             try:
                 result = self._decode(
-                    resp, path=path, endpoint_key=endpoint_key, gateway=is_gateway
+                    resp,
+                    path=path,
+                    endpoint_key=endpoint_key,
+                    gateway=is_gateway,
+                    ignore_auth_exception=ignore_auth_exception,
+                    ignore_must_upgrade=ignore_must_upgrade,
                 )
             except _MustRefreshTokenError as exc:
                 # TalkException 119 (MUST_REFRESH_V3_TOKEN): renew the token
@@ -396,6 +488,8 @@ class Transport:
                     and self._refresh_hook()
                 ):
                     refreshed = True
+                    # Same as above: the replayed request keeps the caller's
+                    # opt-out flags (r(e.config) in the extension).
                     return self.post_json(
                         path,
                         body,
@@ -404,6 +498,8 @@ class Transport:
                         allow_refresh=False,
                         endpoint_key=endpoint_key,
                         base=base,
+                        ignore_auth_exception=ignore_auth_exception,
+                        ignore_must_upgrade=ignore_must_upgrade,
                     )
                 self._record_exchange(
                     "POST",
@@ -607,6 +703,8 @@ class Transport:
         path: str,
         endpoint_key: str | None = None,
         gateway: bool = True,
+        ignore_auth_exception: bool = False,
+        ignore_must_upgrade: bool = False,
     ) -> Any:
         text = resp.text
         ctype = resp.headers.get("content-type", "")
@@ -652,8 +750,24 @@ class Transport:
             "status": info.status if info.status is not None else resp.status_code,
             "raw": payload,
         }
-        # Classification, following the extension's interceptor chain
-        # (uM/pM/iM/oM helpers in main.js):
+        # Classification, following the extension's gateway interceptor chain
+        # (VD factory in main.js — uM/dM/iM/oM helpers).  Two independent
+        # error interceptors:
+        #
+        # * talk-auth — path-scoped: only for config.url starting with
+        #   /api/talk/thrift/Talk, minus the Talk/ChannelService and
+        #   Talk/E2EEKeyBackupService sub-services; opted out per request via
+        #   ignoreTalkAuthException.  Classifies inner codes 1/7/8 (kickout,
+        #   `iM` in main.js) and 119 (renew + replay).
+        # * must-upgrade — NOT path-scoped (the bundle's upgrade interceptor
+        #   has no URL check): every gateway request, opted out per request
+        #   via ignoreMustUpgrade; outer envelope code 10006.
+        #
+        # The extension's third flag, ignoreGlobalAlert, gates a UI-alert
+        # interceptor and has no Python analogue.  HTTP 401/403 ->
+        # LineAuthError is a port-level convenience (the extension's
+        # interceptors never look at the HTTP status) and stays unscoped.
+        talk_auth = _talk_auth_scoped(path) and not ignore_auth_exception
         if (
             info.outer_code == _CODE_REQUEST_MUST_UPGRADE
             or "UPGRADE" in (info.reason or "").upper()
@@ -661,12 +775,16 @@ class Transport:
             # The ONLY upgrade trigger is the outer envelope code 10006
             # (REQUEST_MUST_UPGRADE).  Note inner code 86 is
             # E2EE_INVALID_VERSION — an E2EE protocol error, NOT an upgrade.
-            raise LineMustUpgradeError(msg, **kwargs)
-        if info.inner_code == _CODE_MUST_REFRESH_V3_TOKEN:
+            if not ignore_must_upgrade:
+                raise LineMustUpgradeError(msg, **kwargs)
+            # ignoreMustUpgrade opted out: keep classifying below (in the
+            # extension the talk-auth interceptor runs first, so in-scope
+            # auth codes still classify).
+        if talk_auth and info.inner_code == _CODE_MUST_REFRESH_V3_TOKEN:
             # 119 (MUST_REFRESH_V3_TOKEN): renew + replay (post_json handles
             # it); surfaces as LineAuthError when no refresh hook exists.
             raise _MustRefreshTokenError(msg, **kwargs)
-        if resp.status_code in (401, 403) or info.code in _AUTH_CODES:
+        if resp.status_code in (401, 403) or (talk_auth and info.code in _AUTH_CODES):
             # Auth/kickout set: inner codes 1 (AUTHENTICATION_FAILED),
             # 7 (NOT_AVAILABLE_USER), 8 (NOT_AUTHORIZED_DEVICE) — or the HTTP
             # status says so.  ILLEGAL_ARGUMENT (0) is NOT an auth error.

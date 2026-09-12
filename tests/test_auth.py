@@ -1025,6 +1025,327 @@ def test_refresh_access_token_no_access_in_response_raises():
 
 
 # ===========================================================================
+# token-refresh lifecycle — schedule parsing, retry policy, kickout
+# (the extension's tT class, main.js @~1850300)
+# ===========================================================================
+_SCHEDULE_POLICY = {
+    "initialDelayInMillis": "1",  # numeric strings, like the wire
+    "maxDelayInMillis": "8",
+    "multiplier": 2,
+    "jitterRate": 0,
+}
+
+
+def _token_v3(access: str, refresh: str, issue: float, duration: float = 3600.0) -> dict:
+    """A wire-shaped tokenV3IssueResult carrying the renewal schedule."""
+    return {
+        "accessToken": access,
+        "refreshToken": refresh,
+        "tokenIssueTimeEpochSec": str(int(issue)),
+        "durationUntilRefreshInSec": str(int(duration)),
+        "refreshApiRetryPolicy": dict(_SCHEDULE_POLICY),
+    }
+
+
+def _10202() -> FakeResp:
+    return FakeResp(400, {"error": {"code": 10202, "message": "AUTH_RETRY_REQUIRED"}})
+
+
+def _10201() -> FakeResp:
+    return FakeResp(400, {"error": {"code": 10201, "message": "AUTH_INVALID_REQUEST"}})
+
+
+def test_login_result_parse_extracts_refresh_schedule():
+    """parse() pulls the renewal schedule + retry policy out of a
+    tokenV3IssueResult (numeric strings coerced, like the bundle's Number())."""
+    data = {
+        "type": 1,
+        "tokenV3IssueResult": _token_v3("AT", "RT", 1700000000, 3600),
+    }
+    res = LoginResult.parse(data)
+
+    assert res.token_issue_time_epoch_sec == 1700000000.0
+    assert res.duration_until_refresh_sec == 3600.0
+    assert res.refresh_api_retry_policy == _SCHEDULE_POLICY
+    assert res.has_refresh_schedule is True
+
+
+def test_login_result_parse_without_schedule():
+    """No schedule fields -> None / False (nothing to arm)."""
+    res = LoginResult.parse({"type": 1, "tokenV3IssueResult": {"accessToken": "A"}})
+
+    assert res.token_issue_time_epoch_sec is None
+    assert res.duration_until_refresh_sec is None
+    assert res.refresh_api_retry_policy is None
+    assert res.has_refresh_schedule is False
+
+
+def test_refresh_policy_parse_fills_defaults_and_rejects_garbage():
+    """RefreshApiRetryPolicy.parse: sane defaults for missing/invalid fields,
+    None when the server sent no (or a degenerate) policy."""
+    from okline.auth import RefreshApiRetryPolicy
+
+    assert RefreshApiRetryPolicy.parse(None) is None
+    assert RefreshApiRetryPolicy.parse({}) is None
+    assert RefreshApiRetryPolicy.parse("nope") is None
+
+    # the extension's placeholder defaults ("" strings, 0 multiplier) fall
+    # back to sane values instead of a degenerate loop
+    empty = RefreshApiRetryPolicy.parse(
+        {"initialDelayInMillis": "", "maxDelayInMillis": "", "multiplier": 0, "jitterRate": 0}
+    )
+    assert empty == RefreshApiRetryPolicy(
+        initial_delay_ms=1000.0,
+        max_delay_ms=30000.0,
+        multiplier=2.0,
+        jitter_rate=0.0,  # jitterRate 0 (no jitter) is legitimate
+    )
+
+    # partial server policy keeps the provided fields
+    partial = RefreshApiRetryPolicy.parse({"initialDelayInMillis": 500, "multiplier": 3})
+    assert partial is not None
+    assert partial.initial_delay_ms == 500.0
+    assert partial.multiplier == 3.0
+    assert partial.max_delay_ms == 30000.0
+
+    # degenerate policies (initial >= max) never retry -> simple behaviour
+    assert (
+        RefreshApiRetryPolicy.parse({"initialDelayInMillis": 5000, "maxDelayInMillis": 10})
+        is None
+    )
+
+
+def test_email_login_records_token_schedule(rsa_key):
+    """A successful email login arms the renewal schedule and fires the
+    on_token_issued hook (the extension's setTokenV3IssueResult)."""
+    _priv, info = rsa_key
+    issue = 1700000000
+    success = {
+        "type": 1,
+        "tokenV3IssueResult": _token_v3("A", "R", issue, 1800),
+    }
+    responder = route({"getRSAKeyInfo": info, "loginV2": success})
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
+
+    hooked: list[dict] = []
+    api.auth.on_token_issued = hooked.append
+    result = api.auth.email_login("u@x.io", "pw")
+
+    assert result.token_issue_time_epoch_sec == 1700000000.0
+    assert api.auth.token_schedule == {
+        "tokenIssueTimeEpochSec": 1700000000.0,
+        "durationUntilRefreshInSec": 1800.0,
+        "refreshApiRetryPolicy": dict(_SCHEDULE_POLICY),
+    }
+    assert hooked == [api.auth.token_schedule]
+
+
+def test_refresh_records_schedule_from_response():
+    """A tokenRefresh response carrying a schedule updates token_schedule and
+    fires the hook (re-arming the proactive renewal)."""
+    issue = 1700000000
+    responder = route(
+        {"tokenRefresh": {"tokenV3IssueResult": _token_v3("A2", "R2", issue, 900)}}
+    )
+    api = build_api(responder, access_token="A1")
+    api.transport.tokens.refresh_token = "R1"
+    hooked: list[dict] = []
+    api.auth.on_token_issued = hooked.append
+
+    assert api.auth.refresh_access_token() == "A2"
+
+    assert api.auth.token_schedule == {
+        "tokenIssueTimeEpochSec": float(issue),
+        "durationUntilRefreshInSec": 900.0,
+        "refreshApiRetryPolicy": dict(_SCHEDULE_POLICY),
+    }
+    assert hooked == [api.auth.token_schedule]
+
+
+def test_refresh_retries_10202_with_backoff_then_succeeds():
+    """AUTH_RETRY_REQUIRED(10202) is retried with the stored policy's backoff
+    until a success arrives (tiny delays: 1ms * 2^n, no jitter)."""
+    issue = 1700000000
+    calls = {"n": 0}
+
+    def responder(method, url, kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # first refresh: returns the policy that governs later retries
+            return enveloped({"tokenV3IssueResult": _token_v3("A1", "R1", issue)})
+        if calls["n"] == 2:
+            return _10202()  # retryable
+        return enveloped({"tokenV3IssueResult": _token_v3("A2", "R2", issue, 60)})
+
+    api = build_api(responder, access_token="OLD")
+    api.transport.tokens.refresh_token = "R0"
+
+    assert api.auth.refresh_access_token() == "A1"  # arms the schedule+policy
+    assert api.auth.refresh_access_token() == "A2"  # 10202 -> backoff -> success
+
+    assert calls["n"] == 3
+    assert api.transport.tokens.access_token == "A2"
+    assert api.transport.tokens.refresh_token == "R2"
+    # the retry sent the same (still-valid) refresh token
+    bodies = _bodies(api, "tokenRefresh")
+    assert bodies[1] == {"refreshToken": "R1"}
+
+
+def test_refresh_backoff_is_exponential_jittered_and_bounded(monkeypatch):
+    """The backoff sleeps grow initial*multiplier^n, each jittered by
+    ±jitterRate, and stop once the delay reaches maxDelayInMillis."""
+    import okline.auth as auth_mod
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(auth_mod.time, "sleep", lambda s: sleeps.append(s))
+
+    # policy: initial=100ms, max=1000ms, multiplier=2, jitter ±25%
+    # attempt delays: 100, 200, 400, 800 -> after 800 the grown delay (1600)
+    # exceeds max -> budget exhausted.  4 attempts, sleeps [100, 200, 400, 800]*j.
+    api = build_api(lambda m, u, kw: _10202(), access_token="X")
+    api.auth.token_schedule = {
+        "tokenIssueTimeEpochSec": 1700000000.0,
+        "durationUntilRefreshInSec": 3600.0,
+        "refreshApiRetryPolicy": {
+            "initialDelayInMillis": 100,
+            "maxDelayInMillis": 1000,
+            "multiplier": 2,
+            "jitterRate": 0.25,
+        },
+    }
+
+    with pytest.raises(LineAuthError, match="retry budget"):
+        api.auth.refresh_access_token("RT")
+
+    assert len(_calls_to(api, "tokenRefresh")) == 4
+    assert sleeps, "backoff sleeps were recorded"
+    for delay_ms, slept in zip([100.0, 200.0, 400.0, 800.0], sleeps):
+        assert delay_ms * 0.75 / 1000.0 <= slept <= delay_ms * 1.25 / 1000.0
+    # no 5th attempt: the grown delay (1600ms) >= max (1000ms)
+    assert len(_calls_to(api, "tokenRefresh")) == 4
+
+
+@pytest.mark.parametrize("with_policy", [True, False], ids=["policy", "no-policy"])
+def test_refresh_10201_is_a_hard_kickout(with_policy):
+    """AUTH_INVALID_REQUEST(10201) during renewal raises LineAuthError
+    (re-login required) — with or without a stored retry policy."""
+    api = build_api(route({"tokenRefresh": _10201()}), access_token="X")
+    if with_policy:
+        api.auth.token_schedule = {
+            "tokenIssueTimeEpochSec": 1700000000.0,
+            "durationUntilRefreshInSec": 3600.0,
+            "refreshApiRetryPolicy": dict(_SCHEDULE_POLICY),
+        }
+
+    with pytest.raises(LineAuthError, match="AUTH_INVALID_REQUEST") as ei:
+        api.auth.refresh_access_token("RT")
+
+    assert "re-login" in str(ei.value)
+    # terminal: exactly one attempt, no retries
+    assert len(_calls_to(api, "tokenRefresh")) == 1
+
+
+def test_refresh_without_policy_keeps_simple_behaviour():
+    """No stored retry policy -> a single attempt; 10202 propagates as the
+    plain LineApiError it always was (pre-v2.9 behaviour)."""
+    api = build_api(route({"tokenRefresh": _10202()}), access_token="X")
+
+    with pytest.raises(LineApiError) as ei:
+        api.auth.refresh_access_token("RT")
+
+    assert ei.value.code == 10202
+    assert len(_calls_to(api, "tokenRefresh")) == 1
+
+
+def test_refresh_success_without_schedule_leaves_schedule_unset():
+    """A schedule-less success response arms nothing."""
+    responder = route(
+        {"tokenRefresh": {"tokenV3IssueResult": {"accessToken": "A", "refreshToken": "R"}}}
+    )
+    api = build_api(responder, access_token="X")
+    hooked: list[dict] = []
+    api.auth.on_token_issued = hooked.append
+
+    assert api.auth.refresh_access_token("RT") == "A"
+
+    assert api.auth.token_schedule is None
+    assert hooked == []
+
+
+def test_refresh_without_schedule_clears_stale_schedule(tmp_path):
+    """A schedule-less refresh response must CLEAR a previously armed
+    schedule (the extension's setTokenV3IssueResult clear step): the old
+    token's retry policy is not reused, its fire time is not persisted, and
+    from_tokens_file(auto_refresh_schedule=True) arms nothing."""
+    issue = 1700000000
+    calls = {"n": 0}
+
+    def responder(method, url, kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return enveloped({"tokenV3IssueResult": _token_v3("A1", "R1", issue)})
+        return enveloped({"tokenV3IssueResult": {"accessToken": "A2", "refreshToken": "R2"}})
+
+    api = build_api(responder, access_token="A0")
+    api.transport.tokens.refresh_token = "R0"
+    hooked: list[dict] = []
+    api.auth.on_token_issued = hooked.append
+
+    api.auth.refresh_access_token()  # first refresh: arms the schedule
+    assert api.auth.token_schedule is not None
+    assert api.transport.tokens.token_issue_time_epoch_sec is not None
+    assert hooked == [api.auth.token_schedule]
+
+    hooked.clear()
+    assert api.auth.refresh_access_token() == "A2"  # schedule-less response
+    assert api.auth.token_schedule is None  # stale schedule cleared...
+    assert api.transport.tokens.token_issue_time_epoch_sec is None
+    assert api.transport.tokens.duration_until_refresh_sec is None
+    assert api.transport.tokens.refresh_api_retry_policy is None
+    assert hooked == []  # ...and nothing re-armed
+
+    # nothing schedule-shaped is persisted -> from_tokens_file arms nothing
+    p = tmp_path / "s.json"
+    api.save_tokens(str(p))
+    raw = json.loads(p.read_text())
+    assert "tokenIssueTimeEpochSec" not in raw
+    assert "durationUntilRefreshInSec" not in raw
+    assert "refreshApiRetryPolicy" not in raw
+
+    from okline import OkLine
+
+    api2 = OkLine.from_tokens_file(str(p), auto_refresh_schedule=True)
+    try:
+        assert api2.auth.token_schedule is None  # no bygone timer re-armed
+    finally:
+        api2.close()
+
+
+def test_refresh_policy_clamps_huge_server_delays():
+    """Server-provided retry delays are clamped client-side: the backoff
+    sleeps block the calling thread (a user request via the 401/119 hook, or
+    the keepalive ping thread), so a huge maxDelayInMillis must not be able
+    to park it for an unbounded time."""
+    from okline.auth import REFRESH_RETRY_DELAY_CAP_MS, RefreshApiRetryPolicy
+
+    capped = RefreshApiRetryPolicy.parse(
+        {"initialDelayInMillis": 2000, "maxDelayInMillis": 3_600_000, "multiplier": 2}
+    )
+    assert capped is not None
+    assert capped.initial_delay_ms == 2000.0
+    assert capped.max_delay_ms == REFRESH_RETRY_DELAY_CAP_MS
+
+    # both delays above the cap clamp to it -> degenerate (initial >= max)
+    # -> no policy: the pre-v2.9 single-attempt behaviour applies
+    assert (
+        RefreshApiRetryPolicy.parse(
+            {"initialDelayInMillis": 7_200_000, "maxDelayInMillis": 3_600_000}
+        )
+        is None
+    )
+
+
+# ===========================================================================
 # _poll  (long-poll retry helper)
 # ===========================================================================
 def test_poll_retries_on_410_then_succeeds():

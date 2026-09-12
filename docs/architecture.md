@@ -113,21 +113,38 @@ OkLine.send_text(...)                 # a typed service method
   <- decoded result
 ```
 
+## Token-refresh lifecycle
+
+Every `loginV2` / `qrCodeLoginV2` / `tokenRefresh` response carries a
+`tokenV3IssueResult` with a renewal schedule (`tokenIssueTimeEpochSec` +
+`durationUntilRefreshInSec`) and a `refreshApiRetryPolicy`. The extension's
+`tT` class arms a `setTimeout(renewToken, ...)` on every issuance; OkLine
+mirrors it as an **opt-in** background timer
+(`OkLine(..., auto_refresh_schedule=True)` in `client.py`), re-armed by the
+`AuthFlows.on_token_issued` hook. The reactive path stays as before: Talk
+code 119 / HTTP 401 in `transport.py` renews via the refresh hook and replays
+the request once. `refresh_access_token()` retries gateway code 10202
+(`AUTH_RETRY_REQUIRED`) with the policy's jittered exponential backoff and
+maps 10201 (`AUTH_INVALID_REQUEST`) to a hard `LineAuthError` kickout. After
+a successful scheduled renewal the SSE operation stream is reconnected
+(`OperationReceiver.request_reconnect()`), like the extension's
+`readyState === OPENED && connect()`.
+
 ## Module map
 
 | Module | Responsibility |
 |--------|----------------|
 | `__init__.py` | public package surface (`OkLine`, `Bot`, `Session`, …) + `__version__` |
-| `client.py` | `OkLine` facade: services + auth + ops + obs + e2ee + recorder; session save/load |
+| `client.py` | `OkLine` facade: services + auth + ops + obs + e2ee + recorder; session save/load; opt-in proactive token-renewal timer |
 | `transport.py` | HTTP engine: headers, signing, envelope, errors, 401-refresh, recording |
 | `hmac_signer.py` | `LtsmBridge` — manages the Node bridge (X-Hmac + Curve25519 + E2EE ops) |
 | `ltsm/` | `ltsm.wasm`, `ltsmSandbox.js`, `ltsm_bridge.js` (the real LINE crypto module) |
-| `auth.py` | e-mail / QR / token-refresh login flows |
+| `auth.py` | e-mail / QR / token-refresh login flows; refresh retry policy (10202) + kickout (10201) |
 | `crypto.py` | RSA / PKCS1v1.5 login-credential encryption |
 | `e2ee.py` | `E2EEManager` — Letter Sealing: key handles, channels, encrypt/decrypt (1:1 + group) |
 | `e2ee_crypto.py` | pure-Python E2EE **framing** (plaintext + chunks + sealed message; V1/V2) |
 | `session.py` | `Session` — token **and** E2EE keychain persistence to a JSON file |
-| `operations.py` | SSE + long-poll operation receiver (`Operation`, `SSEEvent`) |
+| `operations.py` | SSE + long-poll operation receiver (`Operation`, `SSEEvent`); keepalive, reconnect backoff, post-renewal reconnect |
 | `bot.py` | `Bot` event framework: `@on_message` / `@command` / `@on`, auto-decrypt |
 | `entities.py` | typed response models (`Profile`, `Contact`, `Group`, `Room`, `Message`) |
 | `ratelimit.py` | `RateLimiter` token bucket (attach to `transport.rate_limiter`) |
