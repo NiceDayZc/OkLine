@@ -85,6 +85,10 @@ class E2EEManager:
         self.my_mid: str | None = getattr(api.tokens, "mid", None)
         # our unwrapped E2EE keys: keyId -> wasm handle
         self.my_keys: dict[int, int] = {}
+        # keyId -> exported blob (the extension's exportedKeyMap). The WASM
+        # cannot re-export an imported key, so blobs loaded from a session
+        # file are served from this cache by export_keys().
+        self._export_blobs: dict[int, str] = {}
         self.latest_key_id: int | None = None
         # peer mid -> (channel, my_key_id, peer_key_id)
         self._peer_channels: dict[str, tuple[int, int, int]] = {}
@@ -120,6 +124,7 @@ class E2EEManager:
         if not isinstance(handles, list):
             return False
         self.my_keys.clear()
+        self._export_blobs.clear()  # fresh unwrapped keys — re-export from scratch
         for h in handles:
             try:
                 kid = int(self._bridge.e2ee_get_key_id(h))
@@ -148,10 +153,19 @@ class E2EEManager:
             return {}
         keys: dict[str, str] = {}
         for kid, handle in self.my_keys.items():
-            try:
-                keys[str(kid)] = self._bridge.e2ee_export_key(handle)
-            except Exception as exc:
-                log.warning("E2EE export of key %s failed: %s", kid, exc)
+            blob = self._export_blobs.get(kid)
+            if blob is None:
+                try:
+                    blob = self._bridge.e2ee_export_key(handle)
+                except Exception as exc:
+                    # Live-verified: a key *loaded* back from an export cannot be
+                    # re-exported by the WASM ("illegal operation") — but its
+                    # original blob is already known, so this only happens for
+                    # keys that somehow bypassed the cache.
+                    log.warning("E2EE export of key %s failed: %s", kid, exc)
+                    continue
+                self._export_blobs[kid] = blob
+            keys[str(kid)] = blob
         return {"mid": self.my_mid, "latestKeyId": self.latest_key_id, "keys": keys}
 
     def load_from_export(self, data: dict[str, Any]) -> bool:
@@ -163,6 +177,10 @@ class E2EEManager:
         for kid_s, blob in keys.items():
             try:
                 self.my_keys[int(kid_s)] = int(self._bridge.e2ee_load_key(blob))
+                # remember the blob — the WASM refuses to re-export an imported
+                # key, so future export_keys() must serve it from this cache
+                # (the extension's exportedKeyMap holds the blobs the same way)
+                self._export_blobs[int(kid_s)] = blob
             except Exception as exc:
                 log.warning("E2EE load of key %s failed: %s", kid_s, exc)
         if not self.my_keys:

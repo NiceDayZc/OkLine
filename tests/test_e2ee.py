@@ -1059,3 +1059,51 @@ def test_download_sealed_media_rejects_non_media(make_api):
     with pytest.raises(LineApiError) as ei:
         api.e2ee.download_sealed_media(msg)
     assert "ENC_KM/OID" in str(ei.value)
+
+
+# --- export cache: imported keys cannot be re-exported by the WASM -----------
+class _NoReExportBridge(FakeBridge):
+    """Live behaviour: exporting an *imported* key raises 'illegal operation'."""
+
+    def __init__(self):
+        super().__init__()
+        self.exported: set[int] = set()
+        self.imported: set[int] = set()
+
+    def e2ee_load_key(self, exported_b64: str) -> int:
+        h = super().e2ee_load_key(exported_b64)
+        self.imported.add(h)
+        return h
+
+    def e2ee_export_key(self, handle: int) -> str:
+        if handle in self.imported:
+            raise Exception("Failed to export secure key: illegal operation")
+        self.exported.add(handle)
+        return super().e2ee_export_key(handle)
+
+
+def test_loaded_key_reexports_from_cache(make_api):
+    """load_from_export must remember the blobs: the WASM refuses to re-export
+    an imported key (live-verified — this broke cross-session E2EE reload)."""
+    api = make_api(None, bridge=_NoReExportBridge())
+    mgr = api.e2ee
+    blob = base64.b64encode(b"exported:99").decode()  # FakeBridge export format
+    assert mgr.load_from_export({"keys": {"42": blob}, "latestKeyId": 42})
+    assert mgr.my_keys == {42: 99}
+    # re-export serves the ORIGINAL blob from the cache — no bridge call
+    out = mgr.export_keys()
+    assert out["keys"] == {"42": blob}
+    # and the bridge was never asked to export (nothing in its exported set)
+    assert api.transport.bridge.exported == set()
+
+
+def test_fresh_login_keys_reexport_through_bridge(make_api):
+    """Freshly unwrapped keys export through the bridge as before."""
+    api = make_api(None, bridge=_NoReExportBridge())
+    mgr = api.e2ee
+    mgr.my_keys, mgr.latest_key_id = {7: 7}, 7
+    out = mgr.export_keys()
+    assert set(out["keys"]) == {"7"}
+    # ...and the produced blob is cached, so a second export is also stable
+    again = mgr.export_keys()
+    assert again == out
