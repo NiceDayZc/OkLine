@@ -168,6 +168,24 @@ class E2EEManager:
             raise RuntimeError(f"no public key for sender {sender_mid}")
         return self._bridge.e2ee_create_channel_with_pubkey(my_handle, pub_b64)
 
+    def _channel_for_own(self, peer_mid: str, sender_key_id: int, receiver_key_id: int) -> int:
+        """Channel for our **own** sealed 1:1 messages read back from history.
+
+        We sealed them with ECDH(our key ``sender_key_id``, the *peer's* public
+        key), so the ECDH counterparty is the original **recipient** (``to``),
+        not the sender — that is us.  X25519 secrets are symmetric, so
+        ECDH(our key, peer pub) recovers the very same send-side channel.
+        """
+        my_handle = self.my_keys.get(sender_key_id)
+        if my_handle is None:
+            # fall back to whatever key we have
+            my_handle = self.my_keys.get(self.latest_key_id or 0)
+        if my_handle is None:
+            raise RuntimeError("no local E2EE key to decrypt with")
+        return self._bridge.e2ee_create_channel_with_pubkey(
+            my_handle, self._user_pub(peer_mid, receiver_key_id or 0)
+        )
+
     # -- encrypt / decrypt (routers) -----------------------------------------
     @staticmethod
     def _is_group(message: dict[str, Any]) -> bool:
@@ -189,7 +207,8 @@ class E2EEManager:
         """Decrypt a received sealed message -> plain message dict.
 
         Handles **V1** and **V2** framing (dispatched on
-        ``contentMetadata.e2eeVersion``) for both **1:1** and **group** messages.
+        ``contentMetadata.e2eeVersion``) for both **1:1** and **group** messages
+        — including your **own** sealed messages read back from history.
         """
         return (self._decrypt_group if self._is_group(message) else self._decrypt_user)(
             message
@@ -231,7 +250,14 @@ class E2EEManager:
         sender, to = message.get("from") or "", message.get("to") or ""
         parse = fr.parse_chunks_v1 if version == 1 else fr.parse_chunks
         ciphertext, sender_key_id, receiver_key_id = parse(chunks)
-        channel = self._channel_for_receive(sender, sender_key_id or 0, receiver_key_id or 0)
+        if sender and to and sender == self.my_mid:
+            # our own message read back from history: the ECDH counterparty is
+            # the original *recipient* (to), not the sender (us)
+            channel = self._channel_for_own(to, sender_key_id or 0, receiver_key_id or 0)
+        else:
+            channel = self._channel_for_receive(
+                sender, sender_key_id or 0, receiver_key_id or 0
+            )
         ct_b64 = base64.b64encode(ciphertext).decode("ascii")
         if version == 1:
             pt_b64 = self._bridge.e2ee_decrypt_v1(channel, ciphertext_b64=ct_b64)

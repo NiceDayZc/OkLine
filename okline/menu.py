@@ -30,6 +30,12 @@ def _names(api: Any) -> dict[str, str]:
         for mid, w in (res.get("contacts", {}) or {}).items():
             c = w.get("contact", w) if isinstance(w, dict) else {}
             out[mid] = c.get("displayNameOverridden") or c.get("displayName") or ""
+    try:  # our own profile too, so our own lines show a name, not a mid prefix
+        me = api.get_profile() or {}
+        if me.get("mid"):
+            out.setdefault(me["mid"], me.get("displayName") or "me")
+    except Exception:
+        pass
     return out
 
 

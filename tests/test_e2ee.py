@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import json
 
-from conftest import USER_MID, USER_MID2, FakeResp, build_api, enveloped
+from conftest import USER_MID, USER_MID2, FakeBridge, FakeResp, build_api, enveloped
 
 from okline import e2ee_crypto as fr
 
@@ -205,3 +205,69 @@ def test_decrypt_message_passthrough_for_plain(make_api):
     api = make_api()
     plain = {"text": "hello", "contentMetadata": {}}
     assert api.decrypt_message(plain) is plain  # not sealed -> unchanged
+
+
+# --- 1:1 decrypt channel: peer vs own messages -------------------------------
+class _DecryptBridge(FakeBridge):
+    """FakeBridge plus the channel/decrypt calls the 1:1 decrypt path uses."""
+
+    def __init__(self):
+        super().__init__()
+        self.channels: list[tuple[int, str]] = []  # (my_handle, peer_pub)
+
+    def e2ee_create_channel_with_pubkey(self, my_handle, peer_pub_b64) -> int:
+        self.channels.append((int(my_handle), peer_pub_b64))
+        return 7000 + len(self.channels)
+
+    def e2ee_decrypt_v2(self, channel, **kw) -> str:
+        return base64.b64encode(json.dumps({"text": "recovered"}).encode()).decode()
+
+
+def _decrypt_api(make_api, pubs: dict[str, str]):
+    """A logged-in api whose ``getE2EEPublicKey`` serves ``pubs`` per mid."""
+
+    def responder(method, url, kw):
+        if url.endswith("getE2EEPublicKey"):
+            mid, _ver, kid = json.loads(kw["data"])
+            return enveloped({"keyData": pubs[mid], "keyId": kid})
+        return enveloped({})
+
+    api = make_api(responder, bridge=_DecryptBridge())
+    mgr = api.e2ee
+    mgr.my_mid, mgr.my_keys, mgr.latest_key_id = "Ume", {5312832: 11}, 5312832
+    return api
+
+
+def _sealed(frm: str, to: str, sender_kid: int, receiver_kid: int) -> dict:
+    return {
+        "to": to,
+        "from": frm,
+        "toType": 0,
+        "contentType": 0,
+        "contentMetadata": {"e2eeVersion": "2"},
+        "chunks": fr.build_chunks(bytes(range(60)), sender_kid, receiver_kid),
+    }
+
+
+def test_decrypt_own_message_uses_recipient_pubkey(make_api):
+    """Our own sealed messages read back from history must be keyed against the
+    *recipient's* public key (the send-side ECDH counterparty), not our own
+    (issue #2: own messages showed ``[encrypted]`` in chat logs)."""
+    my_pub = base64.b64encode(b"M" * 32).decode()
+    peer_pub = base64.b64encode(b"P" * 32).decode()
+    api = _decrypt_api(make_api, {"Ume": my_pub, USER_MID2: peer_pub})
+    out = api.decrypt_message(_sealed("Ume", USER_MID2, 5312832, 42))
+    assert out["_decrypted"] and out["text"] == "recovered"
+    # channel = ECDH(our key handle 11, the PEER's public key)
+    assert api.transport.bridge.channels == [(11, peer_pub)]
+
+
+def test_decrypt_peer_message_uses_sender_pubkey(make_api):
+    """Messages from the peer stay keyed against the sender's public key."""
+    my_pub = base64.b64encode(b"M" * 32).decode()
+    peer_pub = base64.b64encode(b"P" * 32).decode()
+    api = _decrypt_api(make_api, {"Ume": my_pub, USER_MID2: peer_pub})
+    out = api.decrypt_message(_sealed(USER_MID2, "Ume", 42, 5312832))
+    assert out["_decrypted"] and out["text"] == "recovered"
+    # channel = ECDH(our key handle 11, the SENDER's public key)
+    assert api.transport.bridge.channels == [(11, peer_pub)]

@@ -22,6 +22,20 @@ All notable changes to OkLine are documented here. The format follows
   header (`CHROMEOS\t3.7.2\tChrome_OS\t`), `X-LAL` locale map and the LTSM
   extension origin all match — **no protocol changes needed**.
 
+### Fixed
+- **Own messages now decrypt** when a chat is read back (`okline chatlog`,
+  `get_recent_messages`, bots): our own sealed 1:1 messages were channelled
+  against *our own* public key instead of the recipient's, so every message you
+  had sent showed up as `[encrypted]`. The decrypt channel now mirrors the send
+  side — `ECDH(our key, the peer's public key)` — for V1 and V2 framing alike
+  (#2). Not related to QR-vs-PIN login; the keychain is delivered by the QR
+  flow itself.
+- The interactive menu's chat log shows your own display name instead of a
+  truncated mid for your messages (your profile is now part of the name map).
+
+### Docs
+- README: `uv tool install "okline[qr]"` listed as an install method (#1).
+
 ## [2.7.0] - 2026-06-23
 
 ### Added

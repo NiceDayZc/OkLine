@@ -47,6 +47,9 @@ has a `chunks` field), your E2EE keys aren't loaded.
 - If `is_ready()` is `False`, the keychain wasn't loaded — re-run `okline login`
   (scan QR → confirm PIN) to refresh it. E2EE keys load during `qr_login` and
   persist via `save_tokens` / `from_tokens_file`.
+- If **only your own sent messages** show `[encrypted]` while the other side
+  decrypts fine, you are on a version before **2.7.1** — own-message decryption
+  was fixed there; upgrade and re-run the command.
 
 ## The phone shows "an error occurred" after scanning the QR
 

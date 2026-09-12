@@ -83,6 +83,11 @@ print(plain.get("text"))
 V1 vs V2 framing and 1:1 vs group routing are detected automatically — you do not
 choose a version or a mode.
 
+Your **own** sealed messages decrypt too: when you read a chat back
+(`get_recent_messages`, `okline chatlog`, bots over history, …) the messages
+*you* sent are re-derived against the recipient's public key, so both sides of
+the conversation come back in plaintext.
+
 Inside a bot, decryption is automatic: `ctx.text` is already the decrypted text.
 
 ```python

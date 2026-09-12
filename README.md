@@ -37,9 +37,16 @@ api.send_text("u0123456789abcdef0123456789abcdef", "hello from python")
 pip install okline
 ```
 
+Or as an isolated CLI tool with [uv](https://docs.astral.sh/uv/) — the `qr`
+extra bundles the terminal QR renderer:
+
+```bash
+uv tool install "okline[qr]"
+```
+
 The bundled `ltsm.wasm` (for `X-Hmac` signing) ships inside the wheel, so that's
-all you need from Python. Optionally `pip install qrcode` to render the QR-login
-code in your terminal.
+all you need from Python. With a plain `pip` install, optionally
+`pip install qrcode` to render the QR-login code in your terminal.
 
 **Prerequisites**
 
