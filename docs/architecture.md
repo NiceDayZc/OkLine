@@ -73,6 +73,11 @@ The bundled token is specific to this extension build
 `LineConfig(ltsm_origin=...)` / env `LTSM_ORIGIN` if you swap in a different
 build's `ltsm.wasm` + `ltsmSandbox.js`.
 
+> **Staying current:** run `python scripts/check_extension_update.py` to diff
+> your bundled `ltsm.wasm` / `ltsmSandbox.js` and the 77-endpoint registry
+> against the *live* Chrome Web Store build (`--apply` copies new crypto
+> artifacts in). Exit code 0 = identical, 2 = LINE shipped something new.
+
 ## E2EE (Letter Sealing)
 
 Messages can be **end-to-end encrypted** ("Letter Sealing"), for both 1:1 chats

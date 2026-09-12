@@ -4,6 +4,24 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.1] - 2026-09-12
+
+### Added
+- **`scripts/check_extension_update.py`** — a drift checker against the *live*
+  Chrome Web Store: downloads the latest LINE extension CRX, unpacks it,
+  compares the MD5 of the bundled `ltsm.wasm` / `ltsmSandbox.js`, extracts the
+  app header + every thrift path from `static/js/main.js` and diffs them
+  against `okline/` (stdlib-only; `--apply` copies new crypto artifacts in).
+  Exit code 0 = up to date, 2 = drift detected. Run it any time to know
+  whether LINE shipped a new build.
+
+### Verified
+- **Re-audit against the newest Web Store build** (extension 3.7.2, updated
+  February 25, 2026): `ltsm.wasm` and `ltsmSandbox.js` MD5-identical to the
+  bundled copies, all 77 Thrift endpoints unchanged, gateway host, application
+  header (`CHROMEOS\t3.7.2\tChrome_OS\t`), `X-LAL` locale map and the LTSM
+  extension origin all match — **no protocol changes needed**.
+
 ## [2.7.0] - 2026-06-23
 
 ### Added
