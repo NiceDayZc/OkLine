@@ -124,8 +124,11 @@ class AuthServiceMixin(ServiceMixin):
         )
 
     def qr_check_pin_code_verified(
-        self, auth_session_id: str, timeout_ms: int = 120000
+        self, auth_session_id: str, timeout_ms: int = 110000
     ) -> Any:
+        """``checkPinCodeVerified`` — the PIN poll always uses the fixed
+        X-LST 110000 (``rH=11e4`` in the bundle), unlike the QR-scan poll
+        which derives its timeout from ``longPollingIntervalSec``."""
         return self.transport.call(
             "LoginQrCode.SecondaryQrCodeLoginPermitNoticeService.checkPinCodeVerified",
             [{"authSessionId": auth_session_id}],

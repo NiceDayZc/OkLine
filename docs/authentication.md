@@ -35,10 +35,9 @@ from okline import OkLine
 from okline.qrterm import print_qr
 
 api = OkLine()
-api.qr_login(on_qr=print_qr,
-             on_pin=lambda pin: print("Confirm this PIN on your phone:", pin))
+api.qr_login(on_qr=print_qr, on_pin=lambda pin: print("Confirm this PIN on your phone:", pin))
 
-api.save_tokens("tokens.json")   # writes credentials + E2EE keychain
+api.save_tokens("tokens.json")  # writes credentials + E2EE keychain
 ```
 
 `api.qr_login(...)` (on the `OkLine` object) drives the QR flow **and** loads
@@ -49,9 +48,9 @@ your E2EE keys for this session, so a following `save_tokens()` persists them.
 ```python
 from okline import OkLine
 
-api = OkLine.from_tokens_file("tokens.json")   # restores tokens AND E2EE keys
+api = OkLine.from_tokens_file("tokens.json")  # restores tokens AND E2EE keys
 print(api.get_profile())
-print("E2EE ready:", api.e2ee.is_ready())       # True — encrypted chats work
+print("E2EE ready:", api.e2ee.is_ready())  # True — encrypted chats work
 ```
 
 That is all you need. **Prefer this over hand-writing JSON** — `save_tokens` /
@@ -78,13 +77,13 @@ from okline.qrterm import print_qr
 
 api = OkLine()
 result = api.qr_login(
-    on_qr=lambda url: print_qr(url),          # draw the QR (scan it)
-    on_pin=lambda pin: print("PIN:", pin),    # show the PIN to confirm
-    wait_seconds=180,                         # how long to wait for you
+    on_qr=lambda url: print_qr(url),  # draw the QR (scan it)
+    on_pin=lambda pin: print("PIN:", pin),  # show the PIN to confirm
+    wait_seconds=180,  # how long to wait for you
 )
 print("logged in:", bool(result.access_token))
 
-api.save_tokens("tokens.json")   # so you don't have to scan again next time
+api.save_tokens("tokens.json")  # so you don't have to scan again next time
 ```
 
 What happens under the hood:
@@ -133,7 +132,7 @@ result = api.auth.email_login("me@example.com", "secret", with_e2ee=False)
 if result.success:
     print("access token:", result.access_token[:12], "…")
     print(api.get_profile())
-elif result.type == 3:   # REQUIRE_DEVICE_CONFIRM
+elif result.type == 3:  # REQUIRE_DEVICE_CONFIRM
     print("Confirm this PIN on your phone:", result.pin_code)
 else:
     print("needs verification:", result.type, result.display_message)

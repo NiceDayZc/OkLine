@@ -125,9 +125,10 @@ api = OkLine(access_token="...", refresh_token="...")
 
 # (b) or log in by QR, then save a session for next time
 api = OkLine()
-api.qr_login(on_qr=lambda url: print("scan:", url),
-             on_pin=lambda pin: print("confirm PIN:", pin))
-api.save_tokens("tokens.json")     # writes tokens + E2EE keys
+api.qr_login(
+    on_qr=lambda url: print("scan:", url), on_pin=lambda pin: print("confirm PIN:", pin)
+)
+api.save_tokens("tokens.json")  # writes tokens + E2EE keys
 ```
 
 With a refresh token set, OkLine automatically refreshes the access token on a

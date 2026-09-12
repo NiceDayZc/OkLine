@@ -47,7 +47,7 @@ Now use it from Python:
 ```python
 from okline import OkLine
 
-api = OkLine.from_tokens_file("tokens.json")   # restores tokens + E2EE keys
+api = OkLine.from_tokens_file("tokens.json")  # restores tokens + E2EE keys
 print(api.get_profile()["displayName"])
 api.send_text("u0123456789abcdef0123456789abcdef", "hello from python")
 ```

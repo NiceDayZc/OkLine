@@ -31,7 +31,7 @@ and `okline groups` list them.
 ```python
 from okline import OkLine
 
-api = OkLine.from_tokens_file("tokens.json")   # see Authentication
+api = OkLine.from_tokens_file("tokens.json")  # see Authentication
 to = "U0123456789abcdef0123456789abcdef"
 
 # plain text
@@ -44,20 +44,24 @@ api.reply_text(to, "got it!", related_message_id="14000000000000050")
 api.send_sticker(to, package_id="11537", sticker_id="52002734")
 
 # a location pin
-api.send_location(to, 35.6586, 139.7454,
-                  title="Tokyo Tower", address="Minato, Tokyo")
+api.send_location(to, 35.6586, 139.7454, title="Tokyo Tower", address="Minato, Tokyo")
 
 # share a contact
 api.send_contact(to, contact_mid="U....", display_name="Alice")
 
 # a Flex bubble (LINE's rich message format)
-api.send_flex(to, "Hello Flex!", {
-    "type": "bubble",
-    "body": {
-        "type": "box", "layout": "vertical",
-        "contents": [{"type": "text", "text": "Hello Flex!"}],
+api.send_flex(
+    to,
+    "Hello Flex!",
+    {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [{"type": "text", "text": "Hello Flex!"}],
+        },
     },
-})
+)
 ```
 
 Each call returns the server's response — the persisted message dict, which
@@ -82,7 +86,7 @@ references it — OkLine does both steps for you. Pass a **file path** or raw
 api.send_image(to, "photo.jpg")
 api.send_video(to, "clip.mp4", duration_ms=8000)
 api.send_audio(to, "voice.m4a", duration_ms=3000)
-api.send_file(to,  "report.pdf")
+api.send_file(to, "report.pdf")
 
 # bytes also work; give a name so the recipient sees a sensible filename
 with open("photo.jpg", "rb") as fh:
@@ -95,8 +99,9 @@ Notes:
   and only affects how the player shows the length.
 - `name` defaults to the file's basename (or `image.jpg` / `video.mp4` /
   `audio.m4a` / `file.bin` when you pass bytes).
-- This is the **V1 (non-encrypted) upload flow**. For end-to-end encrypted
-  chats, see encrypted send below.
+- This is the **V1 (non-encrypted) upload flow**; chats negotiated on the V2
+  media flow additionally seal the file blob end-to-end — see
+  [media](./media.md#media-and-letter-sealing).
 
 ## Encrypted (Letter Sealing) send
 
@@ -121,7 +126,7 @@ from okline import enums
 api.react("14000000000000050", enums.PredefinedReactionType.LOVE)
 # choices: NICE (2), LOVE (3), FUN (4), AMAZING (5), SAD (6), OMG (7)
 
-api.cancel_reaction("14000000000000050")   # remove your reaction
+api.cancel_reaction("14000000000000050")  # remove your reaction
 ```
 
 The `reaction` argument accepts the enum (as above) or its plain integer, e.g.
@@ -142,9 +147,13 @@ and pass it to `send_message`:
 ```python
 from okline import Message
 
-msg = Message.text(to, "hi @everyone", content_metadata={
-    "MENTION": '{"MENTIONEES":[{"S":"3","E":"13","M":"U...."}]}',
-})
+msg = Message.text(
+    to,
+    "hi @everyone",
+    content_metadata={
+        "MENTION": '{"MENTIONEES":[{"S":"3","E":"13","M":"U...."}]}',
+    },
+)
 api.send_message(msg)
 ```
 
@@ -157,7 +166,7 @@ already uploaded). See [`okline/models.py`](../okline/models.py).
 ```python
 api.send_chat_checked(to, last_message_id="14000000000000050")  # mark read
 api.set_chat_hidden_status(to, last_message_id="...", hidden=True)
-api.send_chat_removed(to, last_message_id="...")                 # remove from list
+api.send_chat_removed(to, last_message_id="...")  # remove from list
 ```
 
 ## See exactly what was sent

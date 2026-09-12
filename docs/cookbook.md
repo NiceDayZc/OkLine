@@ -19,7 +19,8 @@ okline whoami         # reuses the session, no re-scan
 
 ```python
 from okline import OkLine
-api = OkLine.from_tokens_file("tokens.json")   # instant; refreshes token if needed
+
+api = OkLine.from_tokens_file("tokens.json")  # instant; refreshes token if needed
 print(api.get_profile())
 ```
 
@@ -63,15 +64,18 @@ Or in Python with the bot framework:
 
 ```python
 from okline import OkLine, Bot
+
 api = OkLine.from_tokens_file("tokens.json")
 bot = Bot(api)
+
 
 @bot.on_message
 def reply(ctx):
     if ctx.text and "hello" in ctx.text.lower():
         ctx.reply("hi there!")
 
-bot.run()   # blocks; Ctrl-C to stop
+
+bot.run()  # blocks; Ctrl-C to stop
 ```
 
 ## Read and decrypt a chat
@@ -102,9 +106,9 @@ okline backup c0123...group -n 500 -o group.json
 
 ```python
 import json
+
 msgs = api.get_recent_messages("c0123...group", 200)
-json.dump(msgs, open("group.json", "w", encoding="utf-8"),
-          ensure_ascii=False, indent=2)
+json.dump(msgs, open("group.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 ```
 
 ## Broadcast to several chats
@@ -118,7 +122,8 @@ okline broadcast "Meeting moved to 3pm" --to c0111... c0222... u0333... --rate 3
 
 ```python
 from okline.ratelimit import RateLimiter
-api.transport.rate_limiter = RateLimiter(rate=3, per=1.0)   # ~3 msgs/sec
+
+api.transport.rate_limiter = RateLimiter(rate=3, per=1.0)  # ~3 msgs/sec
 for mid in ["c0111...", "c0222...", "u0333..."]:
     api.send_text(mid, "Meeting moved to 3pm")
 ```

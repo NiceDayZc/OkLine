@@ -20,14 +20,23 @@ class ContactsMixin(ServiceMixin):
     GET_CONTACTS_LIMIT = 100
 
     def get_contacts(
-        self, mids: Iterable[str], sync_reason: int = int(SyncReason.FULL_SYNC)
+        self,
+        mids: Iterable[str],
+        sync_reason: int = int(SyncReason.FULL_SYNC),
+        limit: int | None = None,
     ) -> Any:
         """``getContactsV2(request, syncReason)``.
 
         Returns ``{contacts: {mid: {contact: Contact}}}``.  Automatically chunked
-        at :attr:`GET_CONTACTS_LIMIT` mids per request, so you can pass any number
-        of mids.
+        at ``limit`` mids per request (default :attr:`GET_CONTACTS_LIMIT` =
+        100), so you can pass any number of mids.
+
+        The extension reads the chunk size from the server configurations cache
+        (``limit.sync.contacts``, fallback 100); we have no configurations cache
+        yet, so pass ``limit`` explicitly if you know the server-configured
+        value.  Wiring the automatic config lookup is deferred.
         """
+        chunk_limit = self.GET_CONTACTS_LIMIT if limit is None else limit
         all_mids = list(mids)
 
         def _call(batch):
@@ -42,11 +51,11 @@ class ContactsMixin(ServiceMixin):
                 ],
             )
 
-        if len(all_mids) <= self.GET_CONTACTS_LIMIT:
+        if len(all_mids) <= chunk_limit:
             return _call(all_mids)
         contacts: dict = {}
-        for i in range(0, len(all_mids), self.GET_CONTACTS_LIMIT):
-            res = _call(all_mids[i : i + self.GET_CONTACTS_LIMIT])
+        for i in range(0, len(all_mids), chunk_limit):
+            res = _call(all_mids[i : i + chunk_limit])
             if isinstance(res, dict):
                 contacts.update(res.get("contacts", {}) or {})
         return {"contacts": contacts}
@@ -68,7 +77,13 @@ class ContactsMixin(ServiceMixin):
         contact_type: int = int(ContactType.MID),
         req_seq: int | None = None,
     ) -> Any:
-        """``findAndAddContactsByMid(reqSeq, type, ids)`` (arg shape inferred)."""
+        """``findAndAddContactsByMid(reqSeq, type, ids)`` (arg shape inferred).
+
+        The extension *registers* this endpoint but never invokes it anywhere
+        in main.js (the registration's comma operator discards it), so this
+        positional arg order cannot be validated against the bundle — treat it
+        as inferred, not wire-confirmed.
+        """
         if req_seq is None:
             req_seq = self.next_req_seq()
         return self.transport.call(
@@ -143,7 +158,19 @@ class ContactsMixin(ServiceMixin):
     def add_friend_by_mid(
         self, user_mid: str, *, from_chat_mid: str | None = None, req_seq: int | None = None
     ) -> Any:
-        """``addFriendByMid(request)`` (Relation.RelationService)."""
+        """``addFriendByMid(request)`` (Relation.RelationService).
+
+        Failures are interpretable via :class:`okline.enums.AddFriendResult`:
+        the extension keys its alert map for this endpoint by those codes
+        (UNKNOWN=0, INVALID_TARGET_USER=1, AGE_VALIDATION=2, TOO_MANY_FRIENDS=3,
+        TOO_MANY_REQUESTS=4, MALFORMED_REQUEST=5, TRACKING_META_QRCODE_FAVORED=6,
+        TRACKING_META_UPGRADE_FAVORED=7), i.e. a rejected add surfaces as an
+        error carrying one of them.  Catch :class:`okline.exceptions.LineApiError`
+        and compare ``exc.code`` against ``AddFriendResult`` to tell an
+        age-validation block from a friend-count limit, etc.  The success
+        response shape is not modeled — no bundle call site inspects it, so any
+        result-code field on the raw dict is unknown to us.
+        """
         if req_seq is None:
             req_seq = self.next_req_seq()
         if from_chat_mid:

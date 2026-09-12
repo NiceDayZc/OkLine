@@ -28,6 +28,7 @@ from conftest import (
 )
 
 from okline.enums import (
+    AddFriendResult,
     ChatType,
     ContactSetting,
     SyncReason,
@@ -110,6 +111,25 @@ class TestContactListingLookup:
         res = api.get_contacts([f"U{i}" for i in range(250)])
         assert sizes == [100, 100, 50]
         assert len(res["contacts"]) == 250
+
+    def test_get_contacts_custom_limit_chunks(self, make_api):
+        """An explicit ``limit`` overrides GET_CONTACTS_LIMIT for chunking.
+
+        The extension derives the chunk size from the server configurations
+        (``limit.sync.contacts``); we expose it as a parameter instead.
+        """
+        api = make_api()
+        sizes = []
+
+        def fake_call(endpoint, args, **kw):
+            mids = args[0]["targetUserMids"]
+            sizes.append(len(mids))
+            return {"contacts": {m: {"contact": {"mid": m}} for m in mids}}
+
+        api.transport.call = fake_call
+        res = api.get_contacts([f"U{i}" for i in range(120)], limit=80)
+        assert sizes == [80, 40]
+        assert len(res["contacts"]) == 120
 
     def test_find_contact_by_userid(self, make_api, last_request):
         """findContactByUserid sends the search id as the single positional arg."""
@@ -249,6 +269,37 @@ class TestRelationsBuddy:
         assert req["reqSeq"] == 9
         assert req["tracking"]["trackingMetaV2"] == {"chat": {"chatMid": GROUP_MID}}
 
+    def test_add_friend_by_mid_failure_code_maps_to_add_friend_result(self, make_api):
+        """A rejected add surfaces a LineApiError code readable as AddFriendResult.
+
+        The extension keys its alert map for addFriendByMid by the
+        AddFriendResult codes (e.g. 2 == AGE_VALIDATION), so callers can tell
+        an age-validation block from a friend-count limit.
+        """
+        from okline.exceptions import LineApiError
+
+        api = make_api(
+            route(
+                {
+                    "addFriendByMid": enveloped(
+                        {"code": int(AddFriendResult.AGE_VALIDATION), "message": "AGE"},
+                        message="NOT_FOUND",
+                    )
+                }
+            )
+        )
+        with pytest.raises(LineApiError) as excinfo:
+            api.add_friend_by_mid(USER_MID2)
+        assert excinfo.value.code == int(AddFriendResult.AGE_VALIDATION)
+
+    def test_find_and_add_contacts_by_mid_docstring_notes_inferred_shape(self):
+        """Endpoints with no bundle call sites are documented as inferred."""
+        from okline.services import contacts as contacts_mod
+
+        doc = contacts_mod.ContactsMixin.find_and_add_contacts_by_mid.__doc__ or ""
+        assert "never invokes it" in doc
+        assert "inferred" in doc
+
     def test_get_buddy_detail(self, make_api, last_request):
         """getBuddyDetail (BuddyService) sends the buddy mid as a positional arg."""
         api = make_api(route({"getBuddyDetail": {"mid": USER_MID, "displayName": "OA"}}))
@@ -311,6 +362,62 @@ class TestChatCreateRename:
         assert req["chat"]["chatMid"] == GROUP_MID
         assert req["chat"]["chatName"] == "Renamed"
         assert req["chat"]["type"] == int(ChatType.GROUP)
+
+    def test_update_chat_accepts_full_entity_passthrough(self, make_api, last_request):
+        """update_chat forwards a complete Chat entity verbatim (extension form).
+
+        The extension spreads the whole cached Chat entity plus the changed
+        field; update_chat is the escape hatch for callers holding that entity.
+        """
+        api = make_api(route({"updateChat": {}}))
+        full_chat = {
+            "chatMid": GROUP_MID,
+            "type": int(ChatType.GROUP),
+            "chatName": "Old",
+            "picturePath": "path/to/pic",
+            "extra": {"some": "sub-struct"},
+            "memberMids": [USER_MID, USER_MID2],
+        }
+        full_chat["chatName"] = "New"
+        api.update_chat(full_chat, int(UpdateChatRequestAttribute.NAME), req_seq=8)
+
+        assert_endpoint(api, "TalkService", "updateChat")
+        req = last_request(api)[0]
+        assert req["reqSeq"] == 8
+        assert req["updatedAttribute"] == int(UpdateChatRequestAttribute.NAME)
+        assert req["chat"] == full_chat  # round-trips every field untouched
+
+    def test_set_chat_favorite_stringifies_timestamp(self, make_api, last_request):
+        """favoriteTimestamp goes on the wire as a *string* (extension String(...))."""
+        api = make_api(route({"updateChat": {}}))
+        api.set_chat_favorite(GROUP_MID, 1700000000000)
+
+        assert_endpoint(api, "TalkService", "updateChat")
+        req = last_request(api)[0]
+        assert req["updatedAttribute"] == int(UpdateChatRequestAttribute.FAVORITE_TIMESTAMP)
+        assert req["chat"]["chatMid"] == GROUP_MID
+        assert req["chat"]["favoriteTimestamp"] == "1700000000000"
+        assert isinstance(req["chat"]["favoriteTimestamp"], str)
+
+    def test_set_chat_favorite_zero_unfavorite_is_string(self, make_api, last_request):
+        """Un-favoriting sends "0" (the extension's String(f ? 0 : RI()) form)."""
+        api = make_api(route({"updateChat": {}}))
+        api.set_chat_favorite(GROUP_MID, 0)
+
+        req = last_request(api)[0]
+        assert req["chat"]["favoriteTimestamp"] == "0"
+
+    def test_set_chat_prevented_join_by_ticket(self, make_api, last_request):
+        """set_chat_prevented_join_by_ticket -> PREVENTED_JOIN_BY_TICKET attr."""
+        api = make_api(route({"updateChat": {}}))
+        api.set_chat_prevented_join_by_ticket(GROUP_MID, True)
+
+        req = last_request(api)[0]
+        assert req["updatedAttribute"] == int(
+            UpdateChatRequestAttribute.PREVENTED_JOIN_BY_TICKET
+        )
+        assert req["chat"]["preventedJoinByTicket"] is True
+        assert req["chat"]["chatMid"] == GROUP_MID
 
 
 # ===========================================================================
@@ -444,6 +551,25 @@ class TestChatListing:
         api.get_chats([f"C{i}" for i in range(50)])
         assert sizes == [50]  # <= limit -> a single request
 
+    def test_get_chats_custom_limit_chunks(self, make_api):
+        """An explicit ``limit`` overrides GET_CHATS_LIMIT for chunking.
+
+        The extension derives the chunk size from the server configurations
+        (``limit.sync.groups``); we expose it as a parameter instead.
+        """
+        api = make_api()
+        sizes = []
+
+        def fake_call(endpoint, args, **kw):
+            mids = args[0]["chatMids"]
+            sizes.append(len(mids))
+            return {"chats": [{"chatMid": m} for m in mids]}
+
+        api.transport.call = fake_call
+        res = api.get_chats([f"C{i}" for i in range(120)], limit=50)
+        assert sizes == [50, 50, 20]
+        assert len(res["chats"]) == 120
+
 
 # ===========================================================================
 # chats.py -- legacy rooms
@@ -498,15 +624,21 @@ class TestCrossCutting:
         # data was [USER_MID]; if the wrapper leaked we'd see a dict instead.
         assert api.get_all_contact_ids() == [USER_MID]
 
-    def test_request_carries_chrome_headers(self, make_api):
-        """Every Thrift call carries the CHROMEOS application + access headers."""
+    def test_request_carries_gateway_headers(self, make_api):
+        """Thrift calls carry access/version/LAL headers — but no application.
+
+        The extension's gateway client never sets ``X-Line-Application`` (that
+        header is reserved for private OBS resource fetches), so its absence
+        here is the extension-accurate behaviour.
+        """
         api = make_api(route({"getAllContactIds": []}))
         api.get_all_contact_ids()
 
         headers = headers_of(api)
         assert headers["X-Line-Access"] == "TKN"
-        assert headers["X-Line-Application"] == "CHROMEOS\t3.7.2\tChrome_OS\t"
         assert headers["X-Line-Chrome-Version"] == "3.7.2"
+        assert headers["X-LAL"]  # gateway requests carry the underscore form
+        assert "X-Line-Application" not in headers
 
     def test_calls_are_recorded(self, make_api):
         """With record=True each call lands in history / api.last."""

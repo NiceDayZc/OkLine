@@ -2,6 +2,13 @@
 
 Values are verbatim from static/js/main.js (the TypeScript-enum
 `e[e.NAME=N]="NAME"` pattern).  Generated once; safe to edit by hand.
+
+Re-audited against extension 3.7.2 (2026-09): StickerResourceType and
+NameTextStatus were completed to their full bundle member sets,
+MessageReactionType (a fabricated duplicate not present in the bundle)
+was reduced to a deprecated alias, and the bundle-only enums
+PaidReactionResourceType, AddFriendResult, E2EEMediaFlow and
+ConfigurationSyncParam were added.
 """
 
 from __future__ import annotations
@@ -112,15 +119,20 @@ class PredefinedReactionType(IntEnum):
     OMG = 7
 
 
-class MessageReactionType(IntEnum):
-    """MessageReactionType."""
+class PaidReactionResourceType(IntEnum):
+    """resourceType of the paidReactionType union member (main.js xU)."""
 
-    NICE = 2
-    LOVE = 3
-    FUN = 4
-    AMAZING = 5
-    SAD = 6
-    OMG = 7
+    STATIC = 1
+    ANIMATION = 2
+
+
+# NOT present in the extension bundle: the bundle's reaction wire struct is
+# a union — {predefinedReactionType: NICE..OMG} (PredefinedReactionType
+# above) or {paidReactionType: {productId, emojiId, resourceType: 1|2}}
+# (PaidReactionResourceType above).  This name was a fabricated duplicate
+# of PredefinedReactionType and is kept only as a deprecated
+# backwards-compatibility alias.
+MessageReactionType = PredefinedReactionType
 
 
 class SyncReason(IntEnum):
@@ -214,6 +226,17 @@ class ChatType(IntEnum):
     GROUP = 0
     ROOM = 1
     PEER = 2
+
+
+class E2EEMediaFlow(IntEnum):
+    """E2EE media message flow version (main.js ZU, between ChatType and LoginType).
+
+    Backs ``negotiationInfo.mediaMessageFlow.flowMap`` (per-contentType V1/V2
+    choice) in getE2eeInfo / getDefaultFlowMap.
+    """
+
+    V1 = 1
+    V2 = 2
 
 
 class UpdateChatRequestAttribute(IntEnum):
@@ -705,6 +728,15 @@ class OperationSyncCategory(IntEnum):
     MULTI_PROFILE = 10
 
 
+class ConfigurationSyncParam(IntEnum):
+    """Configuration-sync op param3 (main.js BU, between OperationSyncCategory
+    and SyncReason).  SYNC triggers fetchConfigurations/fetchSettings.
+    """
+
+    SYNC = 0
+    REPORT = 1
+
+
 class OpType(IntEnum):
     """OpType."""
 
@@ -857,11 +889,16 @@ class ProductType(IntEnum):
 
 
 class StickerResourceType(IntEnum):
-    """StickerResourceType."""
+    """StickerResourceType (main.js $D, adjacent to ProductType XD)."""
 
     STATIC = 1
     ANIMATION = 2
     SOUND = 3
+    ANIMATION_SOUND = 4
+    POPUP = 5
+    POPUP_SOUND = 6
+    NAME_TEXT = 7
+    PER_STICKER_TEXT = 8
 
 
 class SticonResourceType(IntEnum):
@@ -872,13 +909,27 @@ class SticonResourceType(IntEnum):
 
 
 class NameTextStatus(IntEnum):
-    """NameTextStatus."""
+    """NameTextStatus (main.js ej, directly after SticonResourceType JD)."""
 
     OK = 0
     PRODUCT_UNSUPPORTED = 1
     TEXT_NOT_SPECIFIED = 2
     TEXT_STYLE_UNAVAILABLE = 3
-    CHARACTER_COUNT_LIMIT_EXCEEDED_or_similar = 4
+    CHARACTER_COUNT_LIMIT_EXCEEDED = 4
+    CONTAINS_INVALID_WORD = 5
+
+
+class AddFriendResult(IntEnum):
+    """addFriendByMid result codes (main.js YD, after the addFriendByMid SD)."""
+
+    UNKNOWN = 0
+    INVALID_TARGET_USER = 1
+    AGE_VALIDATION = 2
+    TOO_MANY_FRIENDS = 3
+    TOO_MANY_REQUESTS = 4
+    MALFORMED_REQUEST = 5
+    TRACKING_META_QRCODE_FAVORED = 6
+    TRACKING_META_UPGRADE_FAVORED = 7
 
 
 # Convenient aliases

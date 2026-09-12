@@ -16,7 +16,7 @@ map of every module so you know where to look.
 | **Request body** | a JSON **array of positional Thrift args**; struct args are plain JSON objects with **named** (camelCase) fields |
 | **Response** | wrapped: `{"message":"OK","data":<result>}` — OkLine unwraps `.data`; a non-`OK` message becomes a `LineApiError` |
 | **Auth** | `X-Line-Access: <accessToken>` |
-| **App** | `X-Line-Application: CHROMEOS\t3.7.2\tChrome_OS\t` + `X-Line-Chrome-Version: 3.7.2` |
+| **App** | `X-Line-Chrome-Version: 3.7.2` (`X-Line-Application: CHROMEOS\t3.7.2\tChrome_OS\t` is sent on **private OBS requests only**, never on gateway calls; `X-Line-ChannelToken` is gateway `/api/timeline/`-only) |
 | **Signature** | `X-Hmac: <base64>` on every request (see below) |
 | **Locale** | `X-LAL: en_US` + `Accept-Language: en-US` |
 | **Receive** | SSE `GET /api/operation/receive` (+ long-poll `LF1`/`JQ`) |

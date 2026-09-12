@@ -4,22 +4,31 @@ Everything here is fully offline:
 
 * the HTTP layer is faked via the shared ``conftest`` helpers
   (``build_api`` / ``route`` / ``enveloped`` / ``FakeResp``);
-* the LTSM Node bridge is faked via ``FakeBridge`` so QR login works
-  without Node.js or a real WASM bridge.
+* the LTSM Node bridge is faked via ``FakeBridge`` so QR + E2EE e-mail login
+  work without Node.js or a real WASM bridge.
 
 We generate a throwaway RSA keypair so the ``email_login`` password field is a
-*real* PKCS#1 v1.5 ciphertext we can decrypt and verify, rather than a mock.
+*real* PKCS#1 v1.5 ciphertext we can decrypt and verify, rather than a mock —
+and likewise re-derive the E2EE ``secret`` from the recorded 6-digit code.
 """
 
 from __future__ import annotations
 
+import base64
 import binascii
+import json
 
 import pytest
-from conftest import FakeBridge, FakeResp, build_api, route
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from conftest import FakeBridge, FakeResp, build_api, enveloped, route
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from okline.auth import AuthFlows, LoginResult, _append_secret
+from okline.crypto import (
+    decrypt_e2ee_login_secret,
+    encrypt_e2ee_login_secret,
+    generate_e2ee_login_code,
+)
+from okline.enums import LoginType
 from okline.exceptions import LineApiError, LineAuthError
 
 
@@ -30,6 +39,8 @@ from okline.exceptions import LineApiError, LineAuthError
 @pytest.fixture(scope="module")
 def rsa_key():
     """A small (but valid) RSA keypair plus its getRSAKeyInfo dict form."""
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
     priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     numbers = priv.public_key().public_numbers()
     info = {
@@ -43,12 +54,30 @@ def rsa_key():
 
 def _decrypt_password(priv, hex_password: str) -> bytes:
     """Recover the cleartext credential blob from the hex ciphertext."""
+    from cryptography.hazmat.primitives.asymmetric import padding
+
     ciphertext = binascii.unhexlify(hex_password)
     return priv.decrypt(ciphertext, padding.PKCS1v15())
 
 
+def _bodies(api, suffix: str) -> list:
+    """The decoded JSON bodies of every POST sent to ``suffix``, in order."""
+    out = []
+    for c in api.transport.session.calls:
+        if c["url"].endswith(suffix) and c.get("data") is not None:
+            raw = c["data"]
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode("utf-8")
+            out.append(json.loads(raw))
+    return out
+
+
+def _calls_to(api, fragment: str) -> list[dict]:
+    return [c for c in api.transport.session.calls if fragment in c["url"]]
+
+
 # ===========================================================================
-# email_login
+# email_login — request construction + E2EE secret
 # ===========================================================================
 def test_email_login_builds_login_request_and_adopts_tokens(rsa_key, last_request):
     """email_login: RSA flow -> SUCCESS, correct LoginRequest body + token adoption."""
@@ -63,7 +92,7 @@ def test_email_login_builds_login_request_and_adopts_tokens(rsa_key, last_reques
     }
     responder = route({"getRSAKeyInfo": info, "loginV2": success})
     # Start with no token so we can prove login adopts a fresh one.
-    api = build_api(responder, access_token=None)
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
 
     result = api.auth.email_login("me@example.com", "hunter2")
 
@@ -105,17 +134,51 @@ def test_email_login_builds_login_request_and_adopts_tokens(rsa_key, last_reques
     assert cleartext == expected
 
 
-def test_email_login_without_e2ee_uses_plain_credential_type(rsa_key, last_request):
-    """with_e2ee=False switches the LoginRequest type to ID_CREDENTIAL (0)."""
+def test_email_login_e2ee_secret_is_decryptable_with_the_recorded_code(rsa_key, last_request):
+    """The E2EE tier sends a real `secret`: the per-block AES-CBC encryption
+    of the bridge curve public key under SHA-256(6-digit code), zero IV."""
     _priv, info = rsa_key
     success = {"type": 1, "tokenV3IssueResult": {"accessToken": "A"}}
     responder = route({"getRSAKeyInfo": info, "loginV2": success})
-    api = build_api(responder, access_token=None)
+    bridge = FakeBridge()
+    api = build_api(responder, access_token=None, bridge=bridge)
+
+    api.auth.email_login("me@example.com", "pw")
+
+    req = last_request(api)[0]
+    secret = req["secret"]
+    assert secret  # no longer the empty string the audit flagged
+
+    # the 6-digit code (the PIN the user confirms) is recorded on the flows
+    e2ee = api.auth.last_email_e2ee
+    assert e2ee is not None
+    code = e2ee["code"]
+    assert isinstance(code, str) and len(code) == 6 and code.isdigit()
+    assert e2ee["curve_key_id"] == bridge._key
+
+    # secret is valid base64 decrypting (with the code) to the bridge pubkey:
+    # FakeBridge.e2ee_public_key(1) -> b64(bytes([1]) * 32)
+    public_key = bytes([1]) * 32
+    assert decrypt_e2ee_login_secret(secret, code) == public_key
+
+    # a wrong code must NOT reproduce the public key
+    wrong = "000000" if code != "000000" else "000001"
+    assert decrypt_e2ee_login_secret(secret, wrong) != public_key
+
+
+def test_email_login_without_e2ee_uses_plain_credential_type(rsa_key, last_request):
+    """with_e2ee=False switches the LoginRequest type to ID_CREDENTIAL (0) and
+    keeps `secret` empty (no bridge needed on this path)."""
+    _priv, info = rsa_key
+    success = {"type": 1, "tokenV3IssueResult": {"accessToken": "A"}}
+    responder = route({"getRSAKeyInfo": info, "loginV2": success})
+    api = build_api(responder, access_token=None)  # no bridge!
 
     api.auth.email_login("u@x.io", "pw", with_e2ee=False)
 
     req = last_request(api)[0]
     assert req["type"] == 0  # LoginType.ID_CREDENTIAL
+    assert req["secret"] == ""
 
 
 def test_email_login_targets_the_right_endpoints(rsa_key):
@@ -123,7 +186,7 @@ def test_email_login_targets_the_right_endpoints(rsa_key):
     _priv, info = rsa_key
     success = {"type": 1, "tokenV3IssueResult": {"accessToken": "A"}}
     responder = route({"getRSAKeyInfo": info, "loginV2": success})
-    api = build_api(responder, access_token=None)
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
 
     api.auth.email_login("u@x.io", "pw")
 
@@ -138,7 +201,7 @@ def test_email_login_non_success_does_not_adopt_tokens(rsa_key):
     # REQUIRE_DEVICE_CONFIRM (3): has a pinCode, no tokens to adopt.
     challenge = {"type": 3, "pinCode": "1234"}
     responder = route({"getRSAKeyInfo": info, "loginV2": challenge})
-    api = build_api(responder, access_token="OLD-TOKEN")
+    api = build_api(responder, access_token="OLD-TOKEN", bridge=FakeBridge())
 
     result = api.auth.email_login("u@x.io", "pw")
 
@@ -150,15 +213,546 @@ def test_email_login_non_success_does_not_adopt_tokens(rsa_key):
 
 
 # ===========================================================================
+# email_login — REQUIRE_DEVICE_CONFIRM continuations (JQ / LF1)
+# ===========================================================================
+def _jq_responder(info, challenge, success):
+    """Responder driving the non-E2EE device-confirm sequence:
+    loginV2(type-3) -> GET long-polling/JQ -> loginV2(SUCCESS)."""
+    state = {"login": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("Talk/AuthService/loginV2"):
+            state["login"] += 1
+            return enveloped(challenge if state["login"] == 1 else success)
+        if url.endswith("long-polling/JQ"):
+            return enveloped({"result": {"verifier": "CONFIRMED-V"}})
+        return enveloped({})
+
+    return responder
+
+
+def test_email_login_confirm_device_jq_flow(rsa_key):
+    """Non-E2EE continuation: JQ long-poll (X-LST=180000, session id = the
+    type-3 verifier) then loginV2(type=QRCODE, verifier)."""
+    _priv, info = rsa_key
+    challenge = {"type": 3, "pinCode": "123456", "verifier": "VER-1"}
+    success = {
+        "type": 1,
+        "certificate": "CERT-9",
+        "tokenV3IssueResult": {"accessToken": "A9", "refreshToken": "R9"},
+    }
+    api = build_api(_jq_responder(info, challenge, success), access_token=None)
+
+    pins: list[str] = []
+    result = api.auth.email_login(
+        "u@x.io",
+        "pw",
+        with_e2ee=False,
+        confirm_device=True,
+        on_pin=pins.append,
+        wait_seconds=0.01,
+    )
+
+    # the server pinCode was displayed
+    assert pins == ["123456"]
+
+    # --- the JQ long-poll: GET with the right headers ---------------------
+    jq = _calls_to(api, "long-polling/JQ")
+    assert len(jq) == 1
+    assert jq[0]["method"] == "GET"
+    # Bundle-exact: X-Line-Session-ID carries the loginV2 *verifier* (the
+    # pin is display-only) — main.js @2119316 binds the header to the poll
+    # helper's second argument, which the caller fills with loginResult.verifier.
+    assert jq[0]["headers"]["X-Line-Session-ID"] == "VER-1"
+    assert jq[0]["headers"]["X-LST"] == "180000"
+
+    # --- final relogin: type=QRCODE(1) + the confirmed verifier ------------
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 2
+    final = logins[1][0]
+    assert final["type"] == int(LoginType.QRCODE)
+    assert final["verifier"] == "CONFIRMED-V"
+    assert final["identifier"] == ""
+    assert final["password"] == ""
+    assert final["certificate"] == ""
+
+    # --- SUCCESS result adopted + certificate remembered per email ---------
+    assert result.success is True
+    assert result.access_token == "A9"
+    assert api.transport.tokens.access_token == "A9"
+    assert api.auth.email_certificates["u@x.io"] == "CERT-9"
+
+
+def test_email_login_confirm_device_jq_pin_timeout(rsa_key):
+    """A 410 from the JQ poll is terminal PIN_CODE_TIMEOUT (the extension's
+    shared error handler never retries it for the device-confirm polls) —
+    raise immediately instead of re-polling the expired PIN."""
+    _priv, info = rsa_key
+    challenge = {"type": 3, "pinCode": "123456", "verifier": "VER-1"}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("loginV2"):
+            return enveloped(challenge)
+        if url.endswith("long-polling/JQ"):
+            return FakeResp(410, {"message": "POLL_TIMEOUT"})
+        return enveloped({})
+
+    api = build_api(responder, access_token=None)
+    with pytest.raises(LineAuthError) as ei:
+        api.auth.email_login(
+            "u@x.io", "pw", with_e2ee=False, confirm_device=True, wait_seconds=0.01
+        )
+    assert "PIN code timeout" in str(ei.value)
+    assert ei.value.status == 410
+    # terminal — the expired PIN is not polled again
+    assert len(_calls_to(api, "long-polling/JQ")) == 1
+
+
+def test_email_login_confirm_device_jq_nonjson_body_retries(rsa_key):
+    """A 200 whose body is not valid JSON is treated like any other poll
+    anomaly (retry), not an uncaught decode error."""
+    _priv, info = rsa_key
+    challenge = {"type": 3, "pinCode": "123456", "verifier": "VER-1"}
+    success = {
+        "type": 1,
+        "certificate": "CERT-9",
+        "tokenV3IssueResult": {"accessToken": "A9", "refreshToken": "R9"},
+    }
+    state = {"login": 0, "jq": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("loginV2"):
+            state["login"] += 1
+            return enveloped(challenge if state["login"] == 1 else success)
+        if url.endswith("long-polling/JQ"):
+            state["jq"] += 1
+            if state["jq"] == 1:
+                return FakeResp(200, "")  # empty keep-alive-ish body
+            return enveloped({"result": {"verifier": "CONFIRMED-V"}})
+        return enveloped({})
+
+    api = build_api(responder, access_token=None)
+    result = api.auth.email_login(
+        # wait_seconds must span >1 JQ window (180s) so a retry attempt exists
+        "u@x.io",
+        "pw",
+        with_e2ee=False,
+        confirm_device=True,
+        wait_seconds=360,
+    )
+    assert result.success is True
+    assert len(_calls_to(api, "long-polling/JQ")) == 2  # retried past the bad body
+
+
+def _lf1_responder(info, success):
+    """Responder driving the E2EE device-confirm sequence:
+    loginV2(type-3, E2EE) -> GET long-polling/LF1 -> confirmE2EELogin ->
+    loginV2(type=QRCODE, verifier) -> SUCCESS."""
+    state = {"login": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("Talk/AuthService/loginV2"):
+            state["login"] += 1
+            if state["login"] == 1:
+                return enveloped({"type": 3, "verifier": "VER-1"})
+            return enveloped(success)
+        if url.endswith("long-polling/LF1"):
+            return enveloped(
+                {
+                    "result": {
+                        "metadata": {
+                            "publicKey": "PRIMARY-PUB-B64",
+                            "encryptedKeyChain": "PRIMARY-KC-B64",
+                        }
+                    }
+                }
+            )
+        if url.endswith("Talk/AuthService/confirmE2EELogin"):
+            return enveloped("VER-2")
+        return enveloped({})
+
+    return responder
+
+
+def test_email_login_confirm_device_lf1_flow(rsa_key):
+    """E2EE continuation: LF1 long-poll (X-LST=110000, session id = verifier),
+    channel + hash key chain, confirmE2EELogin, QRCODE relogin."""
+    _priv, info = rsa_key
+    success = {
+        "type": 1,
+        "certificate": "CERT-E",
+        "tokenV3IssueResult": {"accessToken": "AE", "refreshToken": "RE"},
+    }
+    api = build_api(_lf1_responder(info, success), access_token=None, bridge=FakeBridge())
+
+    pins: list[str] = []
+    result = api.auth.email_login(
+        "u@x.io",
+        "pw",
+        confirm_device=True,  # with_e2ee=True (default)
+        on_pin=pins.append,
+        wait_seconds=0.01,
+    )
+
+    # --- the first loginV2 was the E2EE tier with a real secret ------------
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 2
+    assert logins[0][0]["type"] == 2
+    assert logins[0][0]["secret"]
+
+    # the displayed PIN is the locally generated 6-digit code
+    e2ee = api.auth.last_email_e2ee
+    assert e2ee is not None
+    code = e2ee["code"]
+    assert pins == [code]
+
+    # --- the LF1 long-poll --------------------------------------------------
+    lf1 = _calls_to(api, "long-polling/LF1")
+    assert len(lf1) == 1
+    assert lf1[0]["method"] == "GET"
+    assert lf1[0]["headers"]["X-Line-Session-ID"] == "VER-1"
+    assert lf1[0]["headers"]["X-LST"] == "110000"
+
+    # --- confirmE2EELogin(verifier, b64(hashKeyChain)) ---------------------
+    confirms = _bodies(api, "Talk/AuthService/confirmE2EELogin")
+    assert len(confirms) == 1
+    # FakeBridge: e2ee_create_channel(1, "PRIMARY-PUB-B64") -> 1001, and the
+    # fake hash-key-chain op returns b64("hashchain:<channel>").
+    expected_chain = base64.b64encode(b"hashchain:1001").decode("ascii")
+    assert confirms[0] == ["VER-1", expected_chain]
+
+    # unwrapped E2EE key handles recorded for a later E2EEManager
+    assert e2ee["key_handles"] == [1, 2]
+
+    # --- final relogin: type=QRCODE(1) + the confirmed verifier -------------
+    final = logins[1][0]
+    assert final["type"] == int(LoginType.QRCODE)
+    assert final["verifier"] == "VER-2"
+
+    assert result.success is True
+    assert result.access_token == "AE"
+    assert api.transport.tokens.access_token == "AE"
+    assert api.auth.email_certificates["u@x.io"] == "CERT-E"
+
+
+def test_email_login_confirm_device_lf1_requires_hash_key_chain_op(rsa_key):
+    """A bridge without the hash-key-chain op fails with a clear error."""
+    _priv, info = rsa_key
+    success = {"type": 1, "tokenV3IssueResult": {"accessToken": "AE"}}
+
+    class _NoHashChainBridge(FakeBridge):
+        # the real LTSM bridge does not expose this op yet (deferred)
+        e2ee_generate_hash_key_chain_to_confirm_e2ee = None  # type: ignore[assignment]
+
+    api = build_api(
+        _lf1_responder(info, success), access_token=None, bridge=_NoHashChainBridge()
+    )
+
+    with pytest.raises(LineAuthError, match="hash_key_chain"):
+        api.auth.email_login("u@x.io", "pw", confirm_device=True, wait_seconds=0.01)
+
+
+def test_email_login_without_confirm_device_keeps_old_behaviour(rsa_key):
+    """confirm_device is opt-in: a type-3 result is returned untouched."""
+    _priv, info = rsa_key
+    challenge = {"type": 3, "pinCode": "1234", "verifier": "V"}
+    responder = route({"getRSAKeyInfo": info, "loginV2": challenge})
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
+
+    result = api.auth.email_login("u@x.io", "pw")
+
+    assert result.type == 3
+    # no long-poll endpoints were touched
+    urls = [c["url"] for c in api.transport.session.calls]
+    assert not any("long-polling" in u for u in urls)
+
+
+# ===========================================================================
+# email_login_ladder — the extension's S/A/C/_ strategy
+# ===========================================================================
+def _success_body(cert: str = "CERT-NEW") -> dict:
+    return {
+        "type": 1,
+        "certificate": cert,
+        "tokenV3IssueResult": {"accessToken": "A", "refreshToken": "R"},
+    }
+
+
+def test_ladder_uses_stored_certificate_first(rsa_key):
+    """Tier 1 ("A"): a stored per-email certificate is tried with type=ID_CREDENTIAL."""
+    _priv, info = rsa_key
+    responder = route({"getRSAKeyInfo": info, "loginV2": _success_body()})
+    api = build_api(responder, access_token=None)
+    api.auth.email_certificates["u@x.io"] = "CERT-A"
+
+    result = api.auth.email_login_ladder("u@x.io", "pw")
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 1
+    req = logins[0][0]
+    assert req["type"] == 0  # ID_CREDENTIAL with the stored certificate
+    assert req["certificate"] == "CERT-A"
+    # the fresh certificate replaced the stored one
+    assert api.auth.email_certificates["u@x.io"] == "CERT-NEW"
+
+
+def test_ladder_without_certificate_starts_at_e2ee_tier(rsa_key):
+    """No stored certificate -> tier 2 ("C"): E2EE login with a real secret."""
+    _priv, info = rsa_key
+    responder = route({"getRSAKeyInfo": info, "loginV2": _success_body()})
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
+
+    result = api.auth.email_login_ladder("u@x.io", "pw")
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 1
+    req = logins[0][0]
+    assert req["type"] == 2  # ID_CREDENTIAL_WITH_E2EE
+    assert req["secret"]
+    assert req["certificate"] == ""  # the E2EE tier never sends a certificate
+    assert api.auth.email_certificates["u@x.io"] == "CERT-NEW"
+
+
+def _fallback_responder(info, first_resp, success):
+    state = {"login": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("Talk/AuthService/loginV2"):
+            state["login"] += 1
+            if state["login"] == 1:
+                return first_resp
+            return enveloped(success)
+        return enveloped({})
+
+    return responder
+
+
+@pytest.mark.parametrize(
+    "code",
+    [89, 94, 97],  # E2EE_SENDER_NOT_ALLOWED / UPDATE_PRIMARY_DEVICE / NOT_SUPPORT
+)
+def test_ladder_falls_back_to_plain_on_e2ee_error_codes(rsa_key, code):
+    """Tier 2 -> tier 3 ("_" plain login) on the bundle's fallback codes."""
+    _priv, info = rsa_key
+    first = FakeResp(400, {"error": {"code": code, "message": "E2EE not allowed"}})
+    api = build_api(
+        _fallback_responder(info, first, _success_body()),
+        access_token=None,
+        bridge=FakeBridge(),
+    )
+
+    result = api.auth.email_login_ladder("u@x.io", "pw")
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 2
+    assert logins[0][0]["type"] == 2  # E2EE tier attempted first (with secret)
+    assert logins[0][0]["secret"]
+    assert logins[1][0]["type"] == 0  # plain fallback
+    assert logins[1][0]["secret"] == ""
+
+
+def test_ladder_does_not_fall_back_on_other_errors(rsa_key):
+    """An unrelated loginV2 error propagates (no silent fallback)."""
+    _priv, info = rsa_key
+    first = FakeResp(400, {"error": {"code": 5, "message": "INVALID_IDENTITY_CREDENTIAL"}})
+    api = build_api(
+        _fallback_responder(info, first, _success_body()),
+        access_token=None,
+        bridge=FakeBridge(),
+    )
+
+    with pytest.raises(LineApiError):
+        api.auth.email_login_ladder("u@x.io", "pw")
+
+
+def test_ladder_certificate_require_device_confirm_goes_to_e2ee_tier(rsa_key):
+    """Tier 1 type-3 ("A" -> "C"): the E2EE tier runs next, not the JQ poll."""
+    _priv, info = rsa_key
+    state = {"login": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("Talk/AuthService/loginV2"):
+            state["login"] += 1
+            if state["login"] == 1:
+                return enveloped({"type": 3, "pinCode": "111222", "verifier": "V1"})
+            return enveloped(_success_body())
+        return enveloped({})
+
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
+    api.auth.email_certificates["u@x.io"] = "CERT-A"
+
+    result = api.auth.email_login_ladder("u@x.io", "pw")
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 2
+    assert logins[0][0]["type"] == 0 and logins[0][0]["certificate"] == "CERT-A"
+    assert logins[1][0]["type"] == 2 and logins[1][0]["secret"]
+    # the E2EE tier succeeded, so no device-confirm poll happened
+    urls = [c["url"] for c in api.transport.session.calls]
+    assert not any("long-polling" in u for u in urls)
+
+
+def test_ladder_certificate_my_key_not_available_goes_to_e2ee_tier(rsa_key):
+    """Tier 1 error E2EE_MY_KEY_NOT_AVAILABLE ("A" -> "C") — a *string* error
+    id in the bundle, matched wherever the transport surfaces it."""
+    _priv, info = rsa_key
+    first = FakeResp(400, {"error": {"code": 5, "message": "e2ee_my_key_not_available"}})
+    api = build_api(
+        _fallback_responder(info, first, _success_body()),
+        access_token=None,
+        bridge=FakeBridge(),
+    )
+    api.auth.email_certificates["u@x.io"] = "CERT-A"
+
+    result = api.auth.email_login_ladder("u@x.io", "pw")
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert len(logins) == 2
+    assert logins[0][0]["type"] == 0
+    assert logins[1][0]["type"] == 2
+
+
+def test_ladder_e2ee_confirm_device_runs_lf1(rsa_key):
+    """Full ladder: no cert -> E2EE tier type-3 -> LF1 confirm -> QRCODE."""
+    _priv, info = rsa_key
+    success = {
+        "type": 1,
+        "certificate": "CERT-L",
+        "tokenV3IssueResult": {"accessToken": "AL", "refreshToken": "RL"},
+    }
+    state = {"login": 0}
+
+    def responder(method, url, kw):
+        if url.endswith("getRSAKeyInfo"):
+            return enveloped(info)
+        if url.endswith("Talk/AuthService/loginV2"):
+            state["login"] += 1
+            if state["login"] == 1:
+                return enveloped({"type": 3, "verifier": "VER-1"})
+            return enveloped(success)
+        if url.endswith("long-polling/LF1"):
+            return enveloped(
+                {
+                    "result": {
+                        "metadata": {
+                            "publicKey": "PRIMARY-PUB-B64",
+                            "encryptedKeyChain": "PRIMARY-KC-B64",
+                        }
+                    }
+                }
+            )
+        if url.endswith("Talk/AuthService/confirmE2EELogin"):
+            return enveloped("VER-2")
+        return enveloped({})
+
+    api = build_api(responder, access_token=None, bridge=FakeBridge())
+
+    result = api.auth.email_login_ladder("u@x.io", "pw", wait_seconds=0.01)
+
+    assert result.success is True
+    logins = _bodies(api, "Talk/AuthService/loginV2")
+    assert [b[0]["type"] for b in logins] == [2, 1]  # E2EE tier, then QRCODE
+    assert logins[1][0]["verifier"] == "VER-2"
+    assert api.auth.email_certificates["u@x.io"] == "CERT-L"
+
+
+# ===========================================================================
+# crypto — the E2EE login secret scheme
+# ===========================================================================
+def test_generate_e2ee_login_code_is_six_digits():
+    codes = {generate_e2ee_login_code() for _ in range(200)}
+    assert all(len(c) == 6 and c.isdigit() for c in codes)
+    assert len(codes) > 100  # actually random, zero-padded
+
+
+def test_e2ee_login_secret_round_trip():
+    """encrypt -> decrypt reproduces the public key (2 blocks = 32 bytes)."""
+    public_key = bytes(range(32))
+    code = "424242"
+
+    secret = encrypt_e2ee_login_secret(public_key, code)
+
+    raw = base64.b64decode(secret, validate=True)
+    assert len(raw) == 32  # one ciphertext block per 16-byte pubkey block
+    assert decrypt_e2ee_login_secret(secret, code) == public_key
+
+
+def test_e2ee_login_secret_matches_webcrypto_padded_cbc():
+    """Each block equals the first 16 bytes of a PKCS#7-padded WebCrypto
+    AES-CBC encryption under SHA-256(code) with a zero IV."""
+    public_key = bytes(range(32))
+    code = "999999"
+    key = __import__("hashlib").sha256(code.encode()).digest()
+    iv = bytes(16)
+
+    # manual: pad each 16-byte block to 32 bytes (full PKCS#7 block), CBC
+    # encrypt, keep the first 16 bytes — the extension's slice(0, 16).
+    expected = b""
+    for offset in (0, 16):
+        block = public_key[offset : offset + 16] + bytes([16]) * 16
+        enc = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+        expected += (enc.update(block) + enc.finalize())[:16]
+
+    assert base64.b64decode(encrypt_e2ee_login_secret(public_key, code)) == expected
+
+
+def test_e2ee_login_secret_handles_short_tail_block():
+    """A public key with a partial tail block pads it (like WebCrypto would)."""
+    public_key = bytes(range(20))  # 16 + 4 bytes
+    secret = encrypt_e2ee_login_secret(public_key, "123456")
+
+    raw = base64.b64decode(secret)
+    assert len(raw) == 32  # 2 blocks out
+
+    # manual check of the padded 4-byte tail block
+    key = __import__("hashlib").sha256(b"123456").digest()
+    tail = public_key[16:] + bytes([12]) * 12  # pad to 16
+    enc = Cipher(algorithms.AES(key), modes.CBC(bytes(16))).encryptor()
+    expected_tail = (enc.update(tail) + enc.finalize())[:16]
+    assert raw[16:] == expected_tail
+
+
+def test_e2ee_login_secret_reuses_zero_iv_per_block():
+    """Two identical pubkey blocks produce identical ciphertext (same zero IV
+    for every block — this is *not* chained CBC)."""
+    public_key = bytes([7]) * 32
+    raw = base64.b64decode(encrypt_e2ee_login_secret(public_key, "000001"))
+    assert raw[:16] == raw[16:]
+
+
+# ===========================================================================
 # qr_login
 # ===========================================================================
 def _qr_responder(*, verify_status=400):
     """A canned responder for the full secondary-device QR flow.
 
-    ``verifyCertificate`` is forced to ``400 NOT_CERTIFICATED`` so the flow
-    falls through to the PIN sub-flow (first-login path).
+    ``verifyCertificate`` is forced to fail (400 NOT_CERTIFICATED) so the flow
+    falls through to the PIN sub-flow (first-login path); pass
+    ``verify_status=200`` for the returning-device path.
     """
-    verify = FakeResp(verify_status, {"error": {"code": 43, "message": "NOT_CERTIFICATED"}})
+    if verify_status == 200:
+        verify = FakeResp(200, {"message": "OK", "data": {}})
+    else:
+        verify = FakeResp(
+            verify_status, {"error": {"code": 43, "message": "NOT_CERTIFICATED"}}
+        )
     return route(
         {
             "createSession": {"authSessionId": "SESSION-1"},
@@ -188,13 +782,12 @@ def test_qr_login_full_flow(last_request):
     """qr_login: drives session->qr->pin->tokens, embeds secret in the QR URL."""
     api = build_api(_qr_responder(), access_token=None, bridge=FakeBridge())
 
-    seen = {}
-    qr_login_kw = {
-        "on_qr": lambda url: seen.setdefault("qr", url),
-        "on_pin": lambda pin: seen.setdefault("pin", pin),
-        "wait_seconds": 0.01,  # keep the long-poll budget tiny
-    }
-    result = api.auth.qr_login(**qr_login_kw)
+    seen: dict = {}
+    result = api.auth.qr_login(
+        on_qr=lambda url: seen.setdefault("qr", url),
+        on_pin=lambda pin: seen.setdefault("pin", pin),
+        wait_seconds=0.01,  # keep the long-poll budget tiny
+    )
 
     # --- on_qr received a URL carrying the e2ee secret --------------------
     assert "qr" in seen
@@ -251,20 +844,47 @@ def test_qr_login_uses_the_session_bridge_for_curve_keys():
     bridge = FakeBridge()
     api = build_api(_qr_responder(), access_token=None, bridge=bridge)
 
-    captured = {}
+    captured: dict = {}
     api.auth.qr_login(
         on_qr=lambda u: captured.setdefault("u", u), on_pin=lambda p: None, wait_seconds=0.01
     )
 
     # FakeBridge.e2ee_public_key(1) -> b64 of bytes([1]) * 32. The QR URL
     # carries it as a (URL-encoded) ``secret`` query parameter.
-    import base64
     from urllib.parse import parse_qs, urlsplit
 
     expected_secret = base64.b64encode(bytes([1]) * 32).decode("ascii")
     query = parse_qs(urlsplit(captured["u"]).query)
     assert query.get("secret") == [expected_secret]  # parse_qs URL-decodes it
     assert query.get("e2eeVersion") == ["1"]
+
+
+def test_qr_login_pin_poll_uses_fixed_110000_x_lst():
+    """The PIN poll's X-LST is the fixed 110000 ("rH=11e4"), independent of
+    longPollingIntervalSec — only the QR-scan poll derives its X-LST."""
+    api = build_api(_qr_responder(), access_token=None, bridge=FakeBridge())
+
+    api.auth.qr_login(on_qr=lambda u: None, on_pin=lambda p: None, wait_seconds=0.01)
+
+    scan = _calls_to(api, "checkQrCodeVerified")[0]
+    pin = _calls_to(api, "checkPinCodeVerified")[0]
+    assert scan["headers"]["X-LST"] == "1000"  # longPollingIntervalSec(1) * 1000
+    assert pin["headers"]["X-LST"] == "110000"  # fixed rH=11e4
+
+
+def test_service_qr_check_pin_code_verified_default_x_lst():
+    """The AuthServiceMixin's PIN poll (a separate code path from
+    AuthFlows.qr_check_pincode_verified) also defaults to the fixed X-LST
+    110000 (``rH=11e4``); an explicit ``timeout_ms`` overrides it."""
+    api = build_api(lambda m, u, kw: enveloped({}), access_token=None)
+
+    api.qr_check_pin_code_verified("SESSION-1")
+    call = _calls_to(api, "checkPinCodeVerified")[0]
+    assert call["headers"]["X-LST"] == "110000"  # fixed rH=11e4
+    assert call["headers"]["X-Line-Session-ID"] == "SESSION-1"
+
+    api.qr_check_pin_code_verified("SESSION-1", timeout_ms=45000)
+    assert _calls_to(api, "checkPinCodeVerified")[1]["headers"]["X-LST"] == "45000"
 
 
 # ===========================================================================
@@ -449,3 +1069,43 @@ def test_poll_propagates_non_retryable_errors_immediately():
         flows._poll(boom, max_count=5)
     assert ei.value.status == 403
     assert calls["n"] == 1  # raised on first attempt, no retry
+
+
+def test_poll_scan_mode_retries_on_410_only():
+    """The QR-scan retry policy (the extension's Ez retryCondition): a 410 is
+    retried, a 408 is *not*."""
+    flows = AuthFlows(build_api(route({})).transport)
+
+    calls = {"n": 0}
+
+    def flaky_410():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise LineApiError("poll window elapsed", status=410)
+        return "SCANNED"
+
+    assert flows._poll(flaky_410, max_count=5, retry_statuses=(410,)) == "SCANNED"
+    assert calls["n"] == 3
+
+    def always_408():
+        raise LineApiError("request timeout", status=408)
+
+    with pytest.raises(LineApiError) as ei:
+        flows._poll(always_408, max_count=5, retry_statuses=(410,))
+    assert ei.value.status == 408  # raised immediately — 408 is not retried
+
+
+def test_poll_default_still_retries_408():
+    """The default (PIN-poll) semantics keep retrying on 408 as before."""
+    flows = AuthFlows(build_api(route({})).transport)
+
+    calls = {"n": 0}
+
+    def flaky_408():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise LineApiError("request timeout", status=408)
+        return "OK"
+
+    assert flows._poll(flaky_408, max_count=3) == "OK"
+    assert calls["n"] == 2

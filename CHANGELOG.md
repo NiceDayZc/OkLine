@@ -4,6 +4,107 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-09-12
+
+A **drift-fix release**: the core of every surviving finding from a full
+re-audit against the live extension bundle (3.7.2 `main.js`, byte-exact
+re-extraction at every offset) has been fixed. Explicitly **not ported**
+(documented deviations, verified against the bundle): the extension's
+*proactive* token-refresh scheduler (`setTimeout(renewToken)` at
+`tokenIssueTimeEpochSec + durationUntilRefreshInSec` — renewal here stays
+reactive on inner code 119), the `renewToken` retry policy
+(AUTH_RETRY_REQUIRED/10202 exponential backoff per
+`refreshApiRetryPolicy`) and its AUTH_INVALID_REQUEST (10201) kickout, the
+per-endpoint talk-auth interceptor opt-outs
+(`ignoreTalkAuthException`/`ignoreMustUpgrade`/`ignoreGlobalAlert`), and SSE
+keepalive pings / reconnect backoff (the SSE query-param set and `localRev`
+resume cursor *are* ported). No deliberate live-verified deviations were
+changed (`from`-deletion in sealed messages, `keepLoggedIn=True`, SSE header
+auth, the defensive 401 refresh hook — all preserved and documented).
+
+### E2EE (Letter Sealing)
+- **First-time group key creation** — `registerE2EEGroupKey` implemented
+  end-to-end (curve-key generate, per-member `e2eeChannelWrapGroupSharedKey`,
+  upload, unwrap), with automatic fallback when no group key exists yet and on
+  `E2EE_RECREATE_GROUP_KEY` (99).
+- **V1 send path** — the sealing version now follows the negotiated
+  `specVersion` (spec-1 peers get V1-framed messages via the new
+  `e2eechannel_encrypt_v1` bridge op).
+- **Sealed media (V2 flow)** — `ENC_KM`/`FILE_NAME` are sealed into the
+  ciphertext and restored on decrypt; the file blob itself is E2E-encrypted
+  with HKDF-SHA256(`FileEncryption`) AES-CTR + HMAC (`encrypt_blob` /
+  `decrypt_blob`); the media builders accept `enc_km=`,
+  `media_content_info=` / `media_thumb_info=`.
+- **Send-error retry semantics** — sealed sends go through
+  `e2ee.send_with_retry` (wired into `send_message`): codes 84/86/87/88/90
+  reset the negotiation and retry, up to 3 transparent retries (the
+  extension's `sB` wrapper budget); 99 additionally re-registers the group
+  key; 122 (REFRESH_MEDIA_FLOW) resets the negotiation and re-raises without
+  retrying (the extension's `resetE2eeInfo` + rethrow).
+- **Encrypt gating** — no double-sealing (chunks check), sealable
+  content-type whitelist, negotiated `allowedTypes` check, media requires the
+  V2 flow; decrypt-side `REPLACE`/`ENC_KM`/`FILE_NAME` restoration (yL parity)
+  and the extension's control-char escaping sanitizer (xL).
+
+### Login & session flows
+- **E2EE email login** now sends the real `secret` (per-16-byte-block
+  AES-CBC-encrypted curve25519 public key keyed by SHA-256 of a random 6-digit
+  code); **REQUIRE_DEVICE_CONFIRM (type 3)** continuations implemented (JQ/LF1
+  long-polls → `confirmE2EELogin` → `loginV2(type=QRCODE, verifier)`), plus
+  the extension's three-tier email login ladder with per-email certificate
+  store (`email_login_ladder`).
+- PIN-verification poll uses the fixed X-LST 110000; the QR scan poll retries
+  on 410 only (matching the extension), while the device-confirm JQ/LF1 polls
+  treat 410 as a terminal PIN-code timeout (the extension's `PIN_CODE_TIMEOUT`)
+  and never retry it; a 200 with a non-JSON body from those polls is retried,
+  not an abort.
+
+### Transport / headers / errors
+- **Error mapping corrected**: upgrade is outer envelope 10006 only (code 86 is
+  `E2EE_INVALID_VERSION` → plain `LineApiError`); auth kickout set is inner
+  codes {1, 7, 8} (0/ILLEGAL_ARGUMENT no longer auth); inner **119**
+  (`MUST_REFRESH_V3_TOKEN`) auto-refreshes the token and replays the request
+  once; outer **99999** / inner **115** are retried within the retry budget;
+  10052 surfaces `data.statusCode` + `rejectionReason`; success is strictly
+  `message === "OK"` and non-enveloped gateway 2xx bodies are errors.
+- **Header scoping matches the extension**: `X-Line-Application` never on
+  gateway (OBS-private only), `X-Line-ChannelToken` only on gateway
+  `/api/timeline/` paths, `X-LAL` gateway-only, no `content-type` on bodyless
+  GETs; the invented `x-line-resp-code` header fallback is gone; the default
+  User-Agent is documented as a synthetic CrOS Chrome/124 string
+  (overridable via `LineConfig(user_agent=...)`).
+- New `LineConfig(legy_host=...)` sends `X-Legy-Host` on gateway requests
+  (and `legyHost` on the SSE connect).
+
+### Special endpoints
+- **SSE `/api/operation/receive`** now carries the full query set
+  (`version`, `localRev`, `language`, `lastPartialFullSyncs`,
+  `fullSyncRequestReason`, `legyHost`) with a **`localRev` resume cursor**
+  (seeded from `getLastOpRevision`, updated from ops and full-sync events,
+  re-sent on reconnect, stale ops deduped).
+- **`/api/lan/notice`** service notices (`ops.lan_notice()`), OBS
+  **`/info.obs`** + **`/playback.obs`** (`obs.resource_info()` /
+  `obs.playback_info()`), the **`X-Talk-Meta`** thrift-blob builder
+  (`obs.build_talk_meta()`), and the extension's **OBS auth headerMapper**
+  (channel token for `/r/myhome/`, encrypted `OBS_GENERAL` token +
+  `X-Line-Application` otherwise, no auth for public objects).
+- Thin typed helpers for `timeline.homeId`/`getCover`/`updateCover` and legy
+  `pageinfo` (`caller=LINE_CHROME`), plus CDN host constants and
+  `download_object(cdn=...)` overrides.
+
+### Models / enums / services
+- `Message` base now supports optional `from`/`id`/`createdTime` (string epoch
+  ms); `hasContent` correct for text (false) and sticker (true); sticker
+  `STKOPT`/`STKHASH`/`STK_IMG_TXT`; `favoriteTimestamp` sent as string;
+  `updateChat` documented as the full-Chat-entity escape hatch;
+  `getChats`/`getContacts` take a `limit=` (server-config counterparts noted);
+  `updateProfileAttributes`/`set_status_message` accept metadata.
+- Enums: `StickerResourceType` completed (8 members), `NameTextStatus`
+  corrected (+`CONTAINS_INVALID_WORD`), new `AddFriendResult`,
+  `PaidReactionResourceType`, `E2EEMediaFlow` (V1/V2),
+  `ConfigurationSyncParam`; `MessageReactionType` is now a documented
+  deprecated alias of `PredefinedReactionType`.
+
 ## [2.7.1] - 2026-09-12
 
 ### Added

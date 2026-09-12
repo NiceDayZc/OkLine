@@ -105,9 +105,10 @@ Files are split by concern: `test_transport.py`, `test_crypto.py`,
 ```python
 def test_send_text_payload(make_api, last_request):
     from conftest import route, USER_MID
+
     api = make_api(route({"sendMessage": {"id": "1"}}))
     api.send_text(USER_MID, "hi")
-    body = last_request(api)                      # the positional-args array
+    body = last_request(api)  # the positional-args array
     assert api.transport.session.last["url"].endswith("/Talk/TalkService/sendMessage")
     req_seq, msg = body
     assert msg["text"] == "hi" and msg["contentType"] == 0

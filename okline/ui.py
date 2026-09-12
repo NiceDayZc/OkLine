@@ -21,7 +21,12 @@ def _enable_windows_vt() -> None:
     try:  # turn on ANSI escape processing on Windows 10+ consoles
         import ctypes
 
-        k = ctypes.windll.kernel32
+        # ``ctypes.windll`` only exists on Windows; getattr keeps mypy happy on
+        # other platforms (this branch is Windows-only at runtime).
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:  # pragma: no cover - non-Windows ctypes
+            return
+        k = windll.kernel32
         k.SetConsoleMode(k.GetStdHandle(-11), 7)
     except Exception:  # pragma: no cover
         pass

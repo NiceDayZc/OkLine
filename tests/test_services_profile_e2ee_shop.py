@@ -104,6 +104,32 @@ class TestProfile:
         seq, _request = last_request(api)
         assert seq == 4242
 
+    def test_update_profile_attributes_with_meta(self, make_api, last_request):
+        """Per-attribute ``meta`` is forwarded (sticon/mention metadata)."""
+        api = make_api(route({"updateProfileAttributes": {}}))
+        meta = {"sticon": [{"index": 0, "sticonId": "1", "packageId": "2"}]}
+        api.update_profile_attributes(
+            {int(ProfileAttribute.STATUS_MESSAGE): "hi :)"},
+            meta={int(ProfileAttribute.STATUS_MESSAGE): meta},
+        )
+        _seq, request = last_request(api)
+        assert request == {"profileAttributes": {"16": {"value": "hi :)", "meta": meta}}}
+
+    def test_update_profile_attributes_meta_only_for_given_keys(self, make_api, last_request):
+        """Attributes absent from ``meta`` still get the wire-default empty dict."""
+        api = make_api(route({"updateProfileAttributes": {}}))
+        api.update_profile_attributes(
+            {
+                int(ProfileAttribute.DISPLAY_NAME): "Name",
+                int(ProfileAttribute.STATUS_MESSAGE): "Status",
+            },
+            meta={int(ProfileAttribute.STATUS_MESSAGE): {"mention": ["m1"]}},
+        )
+        _seq, request = last_request(api)
+        attrs = request["profileAttributes"]
+        assert attrs["2"] == {"value": "Name", "meta": {}}
+        assert attrs["16"] == {"value": "Status", "meta": {"mention": ["m1"]}}
+
     def test_set_display_name_uses_attribute_2(self, make_api, last_request):
         """set_display_name maps to ProfileAttribute.DISPLAY_NAME ('2')."""
         api = make_api(route({"updateProfileAttributes": {}}))
@@ -117,6 +143,14 @@ class TestProfile:
         api.set_status_message("busy")
         _seq, request = last_request(api)
         assert request == {"profileAttributes": {"16": {"value": "busy", "meta": {}}}}
+
+    def test_set_status_message_with_meta(self, make_api, last_request):
+        """set_status_message(meta=...) populates the sticon/mention metadata."""
+        api = make_api(route({"updateProfileAttributes": {}}))
+        meta = {"sticon": [{"sticonId": "7"}]}
+        api.set_status_message("hey", meta=meta)
+        _seq, request = last_request(api)
+        assert request == {"profileAttributes": {"16": {"value": "hey", "meta": meta}}}
 
 
 # ---------------------------------------------------------------------------
@@ -327,8 +361,13 @@ class TestChannelToken:
         api.issue_channel_token()
         assert api.transport.tokens.channel_access_token == "LEGACY"
 
-    def test_cached_channel_token_sent_as_header_on_next_call(self, make_api):
-        """Once cached, subsequent requests carry X-Line-ChannelToken."""
+    def test_cached_channel_token_scoped_to_timeline_paths(self, make_api):
+        """Once cached, the channel token rides only ``/api/timeline/`` requests.
+
+        The extension's gateway headerMapper attaches ``X-Line-ChannelToken``
+        exclusively to timeline URLs (and ``/r/myhome/`` OBS fetches) — never
+        to thrift calls.
+        """
         api = make_api(
             route(
                 {
@@ -338,7 +377,14 @@ class TestChannelToken:
             )
         )
         api.issue_channel_token()
+        assert api.transport.tokens.channel_access_token == "CHTOK"
+
+        # a thrift call does NOT carry it
         api.get_server_time()
+        assert "X-Line-ChannelToken" not in api.transport.session.last["headers"]
+
+        # a timeline request does
+        api.transport.get("/api/timeline/home")
         assert api.transport.session.last["headers"]["X-Line-ChannelToken"] == "CHTOK"
 
     def test_issue_channel_token_without_token_leaves_cache_empty(self, make_api):

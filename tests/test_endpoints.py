@@ -19,10 +19,15 @@ import pytest
 
 from okline import endpoints
 from okline.endpoints import (
+    CDN_OBS_BASE,
+    CDN_PROFILE_BASE,
+    CDN_SHOP_BASE,
+    CDN_STICKER_BASE,
     GATEWAY_BASE,
     LEGY_BACKUP_BASE,
     LEGY_BASE,
     OBS_BASE,
+    OBS_HOSTS,
     SPECIAL_ENDPOINTS,
     THRIFT_ENDPOINTS,
     all_method_names,
@@ -192,11 +197,17 @@ def test_special_endpoints_is_a_dict():
     [
         ("operation.receive", "api/operation/receive"),
         ("longpoll.LF1", "api/talk/long-polling/LF1"),
+        ("longpoll.JQ", "api/talk/long-polling/JQ"),
         ("auth.tokenRefresh", "api/auth/tokenRefresh"),
+        ("lan.notice", "api/lan/notice"),
+        ("timeline.home", "api/timeline/homeId"),
+        ("timeline.getCover", "api/timeline/getCover"),
+        ("timeline.updateCover", "api/timeline/updateCover"),
+        ("legy.pageinfo", "sc/api/v2/pageinfo/get"),
     ],
 )
 def test_special_endpoints_known_paths(key, expected_path):
-    """Operation-stream, long-poll, and token-refresh helpers are present."""
+    """Operation-stream, long-poll, token-refresh, notice and REST helpers."""
     assert SPECIAL_ENDPOINTS[key] == expected_path
 
 
@@ -230,6 +241,39 @@ def test_legy_base_urls():
     """LEGY primary and backup edges are HTTPS line-apps hosts."""
     assert LEGY_BASE == "https://legy-jp.line-apps.com"
     assert LEGY_BACKUP_BASE == "https://legy-backup.line-apps.com"
+
+
+# ---------------------------------------------------------------------------
+# CDN / OBS host map (the extension's defaultConnInfoData servers)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "const, expected",
+    [
+        (CDN_OBS_BASE, "https://obs.line-scdn.net"),
+        (CDN_PROFILE_BASE, "https://profile.line-scdn.net"),
+        (CDN_STICKER_BASE, "https://stickershop.line-scdn.net"),
+        (CDN_SHOP_BASE, "https://shop.line-scdn.net"),
+    ],
+)
+def test_cdn_base_urls(const, expected):
+    """The four CDN hosts match the bundle's defaultConnInfoData map."""
+    assert const == expected
+
+
+def test_obs_hosts_maps_cdn_keys_to_bases():
+    """``OBS_HOSTS`` resolves the cdn keys the bundle's downloads accept."""
+    assert OBS_HOSTS["obs"] == OBS_BASE
+    assert OBS_HOSTS["cdn_obs"] == CDN_OBS_BASE
+    assert OBS_HOSTS["cdn_profile"] == CDN_PROFILE_BASE
+    assert OBS_HOSTS["cdn_sticker"] == CDN_STICKER_BASE
+    assert OBS_HOSTS["cdn_shop"] == CDN_SHOP_BASE
+
+
+@pytest.mark.parametrize("base", list(OBS_HOSTS.values()))
+def test_obs_host_urls_are_https_without_trailing_slash(base):
+    """Every OBS host (default + CDN) is HTTPS without a trailing slash."""
+    assert base.startswith("https://")
+    assert not base.endswith("/")
 
 
 @pytest.mark.parametrize("base", [GATEWAY_BASE, OBS_BASE, LEGY_BASE, LEGY_BACKUP_BASE])

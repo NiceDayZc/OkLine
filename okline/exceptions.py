@@ -6,7 +6,11 @@ status and a body shaped roughly like::
 
     {"error": {"code": 8, "message": "...", "metadata": {...}}}
 
-or, for the talk auth layer, with an ``X-Line-...`` header carrying the code.
+or as a gateway envelope wrapping the nested TalkException::
+
+    {"code": 10051, "message": "RESPONSE_ERROR",
+     "data": {"name": "TalkException", "code": 8, "reason": "..."}}
+
 We normalise all of those into :class:`LineApiError` subclasses.
 """
 
@@ -90,10 +94,16 @@ class LineLoginRequired(LineAuthError):
     """No usable credentials are available; call one of the login flows first."""
 
 
-# Maps the well-known talk error codes onto specific exception classes so that
-# callers can ``except LineAuthError`` rather than string-matching.
+# Maps the well-known TalkException codes onto specific exception classes so
+# that callers can ``except LineAuthError`` rather than string-matching.
+# Matches the extension's talk-auth interceptor (iM in main.js):
+#   1 AUTHENTICATION_FAILED, 7 NOT_AVAILABLE_USER (deleted account),
+#   8 NOT_AUTHORIZED_DEVICE.
+# Deliberately NOT in the set: 0 ILLEGAL_ARGUMENT (an ordinary request error),
+# 119 MUST_REFRESH_V3_TOKEN (handled by the renew-and-retry path in
+# Transport.post_json, surfacing as LineAuthError only if renewal fails).
 _AUTH_CODES = {
-    0,
     1,
+    7,
     8,
-}  # ILLEGAL_ARGUMENT/AUTHENTICATION_FAILED/NOT_AUTHORIZED_DEVICE families
+}  # AUTHENTICATION_FAILED / NOT_AVAILABLE_USER / NOT_AUTHORIZED_DEVICE

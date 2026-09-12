@@ -44,11 +44,22 @@ class ChatsMixin(ServiceMixin):
     def update_chat(
         self, chat: dict, updated_attribute: int, req_seq: int | None = None
     ) -> Any:
-        """``updateChat(request)``.
+        """``updateChat(request)`` — the full-Chat-entity escape hatch.
 
-        ``chat`` should be the full Chat object with the changed field set;
-        ``updated_attribute`` is the :class:`UpdateChatRequestAttribute` bitmask
-        selecting which field changed.
+        The extension always spreads the *whole cached Chat entity* plus the
+        changed field — ``{reqSeq, chat: {...chat, chatName: newName},
+        updatedAttribute: NAME}`` (main.js ~3669772) — so every field it knows
+        about is round-tripped.  This method accepts any chat dict verbatim:
+        pass the complete entity (e.g. from ``get_chats``) with your change
+        applied to mirror the wire exactly.
+
+        The convenience helpers (:meth:`rename_chat`, :meth:`set_chat_favorite`,
+        :meth:`set_chat_prevented_join_by_ticket`) instead build a minimal
+        ``{chatMid, <changed field>, type}`` skeleton.  Fields absent from a
+        Thrift struct default server-side, so the skeleton works for the
+        attributes those helpers touch — but sub-structs such as
+        ``picturePath``/``extra`` are not round-tripped; call this method
+        directly with the full entity when that matters.
         """
         if req_seq is None:
             req_seq = self.next_req_seq()
@@ -66,6 +77,8 @@ class ChatsMixin(ServiceMixin):
     def rename_chat(
         self, chat_mid: str, new_name: str, chat_type: int = int(ChatType.GROUP)
     ) -> Any:
+        """Minimal-skeleton NAME update (see :meth:`update_chat` for the
+        full-entity form the extension uses)."""
         return self.update_chat(
             {"chatMid": chat_mid, "chatName": new_name, "type": int(chat_type)},
             int(UpdateChatRequestAttribute.NAME),
@@ -74,10 +87,16 @@ class ChatsMixin(ServiceMixin):
     def set_chat_favorite(
         self, chat_mid: str, favorite_timestamp: int, chat_type: int = int(ChatType.GROUP)
     ) -> Any:
+        """Minimal-skeleton FAVORITE_TIMESTAMP update.
+
+        ``favorite_timestamp`` is an epoch-ms int here but is **stringified on
+        the wire** — the extension sends ``String(favoriteTimestamp)`` (and
+        ``"0"`` to un-favorite), so we do the same.
+        """
         return self.update_chat(
             {
                 "chatMid": chat_mid,
-                "favoriteTimestamp": favorite_timestamp,
+                "favoriteTimestamp": str(favorite_timestamp),
                 "type": int(chat_type),
             },
             int(UpdateChatRequestAttribute.FAVORITE_TIMESTAMP),
@@ -86,6 +105,8 @@ class ChatsMixin(ServiceMixin):
     def set_chat_prevented_join_by_ticket(
         self, chat_mid: str, prevented: bool, chat_type: int = int(ChatType.GROUP)
     ) -> Any:
+        """Minimal-skeleton PREVENTED_JOIN_BY_TICKET update (see
+        :meth:`update_chat` for the full-entity form)."""
         return self.update_chat(
             {"chatMid": chat_mid, "preventedJoinByTicket": prevented, "type": int(chat_type)},
             int(UpdateChatRequestAttribute.PREVENTED_JOIN_BY_TICKET),
@@ -201,12 +222,21 @@ class ChatsMixin(ServiceMixin):
         with_members: bool = True,
         with_invitees: bool = True,
         sync_reason: int = int(SyncReason.FULL_SYNC),
+        limit: int | None = None,
     ) -> Any:
         """``getChats(request, syncReason)`` -> ``{chats: [Chat]}``.
 
-        Automatically chunked at :attr:`GET_CHATS_LIMIT` mids per request and the
-        ``chats`` lists merged, so you can pass an unbounded number of chat mids.
+        Automatically chunked at ``limit`` mids per request (default
+        :attr:`GET_CHATS_LIMIT` = 100) and the ``chats`` lists merged, so you
+        can pass an unbounded number of chat mids.
+
+        The extension does not hardcode 100: it reads the chunk size from the
+        server configurations cache (``limit.sync.groups``, fallback 100) and
+        runs 3 concurrent chunked requests (main.js ~1816550).  We have no
+        configurations cache yet, so pass ``limit`` explicitly if you know the
+        server-configured value; wiring the automatic config lookup is deferred.
         """
+        chunk_limit = self.GET_CHATS_LIMIT if limit is None else limit
         mids = list(chat_mids)
 
         def _call(batch):
@@ -222,11 +252,11 @@ class ChatsMixin(ServiceMixin):
                 ],
             )
 
-        if len(mids) <= self.GET_CHATS_LIMIT:
+        if len(mids) <= chunk_limit:
             return _call(mids)
         merged: list = []
-        for i in range(0, len(mids), self.GET_CHATS_LIMIT):
-            res = _call(mids[i : i + self.GET_CHATS_LIMIT])
+        for i in range(0, len(mids), chunk_limit):
+            res = _call(mids[i : i + chunk_limit])
             if isinstance(res, dict):
                 merged.extend(res.get("chats", []) or [])
         return {"chats": merged}

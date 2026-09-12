@@ -96,7 +96,7 @@ from okline import OkLine, Bot
 
 # log in once, reuse the session forever
 api = OkLine()
-api.auth.qr_login(on_qr=print)        # scan the QR with your phone
+api.auth.qr_login(on_qr=print)  # scan the QR with your phone
 api.save_tokens("session.json")
 
 # next time

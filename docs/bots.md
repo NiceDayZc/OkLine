@@ -15,15 +15,17 @@ If you only need the raw event stream, see
 ```python
 from okline import OkLine, Bot
 
-api = OkLine.from_tokens_file("tokens.json")   # log in once, reuse forever
+api = OkLine.from_tokens_file("tokens.json")  # log in once, reuse forever
 bot = Bot(api)
+
 
 @bot.on_message
 def echo(ctx):
     if ctx.text:
         ctx.reply(f"you said: {ctx.text}")
 
-bot.run()                                      # blocks; Ctrl-C to stop
+
+bot.run()  # blocks; Ctrl-C to stop
 ```
 
 That's a working bot. Run it, then message your account from another phone — it
@@ -47,9 +49,11 @@ Register handlers with decorators. All are optional and you can mix them.
 ```python
 from okline import enums
 
-@bot.command("ping")          # triggers on a message like "/ping"
+
+@bot.command("ping")  # triggers on a message like "/ping"
 def ping(ctx):
     ctx.reply("pong")
+
 
 @bot.on(enums.OpType.NOTIFIED_INVITE_INTO_CHAT)
 def on_invited(ctx):
@@ -96,17 +100,20 @@ RULES = {
     "hours": "We're open 9-5, Mon-Fri.",
 }
 
+
 @bot.on_message
 def auto_reply(ctx):
     if not ctx.text:
-        return                      # skip stickers, images, etc.
+        return  # skip stickers, images, etc.
     key = ctx.text.strip().lower()
     if key in RULES:
         ctx.reply(RULES[key])
 
+
 @bot.command("help")
 def help_cmd(ctx):
     ctx.reply("Try saying: " + ", ".join(RULES))
+
 
 bot.run()
 ```

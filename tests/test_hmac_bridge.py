@@ -9,6 +9,9 @@ Covered surface:
 * ``sign()`` reproduces a known ``X-Hmac`` vector exactly.
 * ``curvekey_generate()`` returns an integer handle.
 * ``e2ee_public_key()`` returns a base64 Curve25519 public key (32 raw bytes).
+* ``e2ee_encrypt_v1()``/``e2ee_decrypt_v1()`` round-trip through the real WASM.
+* ``e2ee_wrap_group_shared_key()``/``e2ee_unwrap_group_shared_key()`` round-trip
+  (the ``registerE2EEGroupKey`` wrap op and its inverse).
 * ``HmacSigner`` is the backwards-compatible alias for ``LtsmBridge``.
 """
 
@@ -123,6 +126,61 @@ def test_distinct_curve_handles(bridge):
     id2 = bridge.curvekey_generate()
     assert id1 != id2
     assert bridge.e2ee_public_key(id1) != bridge.e2ee_public_key(id2)
+
+
+# ---------------------------------------------------------------------------
+# E2EE channel encrypt/decrypt + group-key wrap (new bridge ops)
+# ---------------------------------------------------------------------------
+def test_e2ee_encrypt_v1_decrypt_v1_roundtrip(bridge):
+    """V1 Letter-Sealing round-trips through the real WASM.
+
+    ``e2eeChannelEncryptV1(channel, plaintext)`` takes only the channel and the
+    plaintext bytes (no to/from/keyIds AAD), mirroring decryptV1.
+    """
+    k1 = bridge.curvekey_generate()
+    k2 = bridge.curvekey_generate()
+    channel = bridge.e2ee_create_channel(k1, bridge.e2ee_public_key(k2))
+    plaintext = b"v1 letter-sealing roundtrip payload, long enough to be real" * 2
+    ct_b64 = bridge.e2ee_encrypt_v1(
+        channel, plaintext_b64=base64.b64encode(plaintext).decode()
+    )
+    assert isinstance(ct_b64, str) and ct_b64
+    assert base64.b64decode(ct_b64) != plaintext  # actually encrypted
+    back_b64 = bridge.e2ee_decrypt_v1(channel, ciphertext_b64=ct_b64)
+    assert base64.b64decode(back_b64) == plaintext
+
+
+def test_e2ee_wrap_unwrap_group_shared_key_roundtrip(bridge):
+    """The registerGroupKey wrap op and its inverse round-trip via mirrored channels.
+
+    A group shared key (a curve-key handle) wrapped on channel(key1, pub2) must
+    unwrap on the mirrored channel(key2, pub1) back into a usable key handle.
+    """
+    k1 = bridge.curvekey_generate()
+    k2 = bridge.curvekey_generate()
+    ch12 = bridge.e2ee_create_channel(k1, bridge.e2ee_public_key(k2))
+    shared = bridge.curvekey_generate()
+    wrapped = bridge.e2ee_wrap_group_shared_key(ch12, key_handle=shared)
+    assert isinstance(wrapped, str) and len(base64.b64decode(wrapped)) > 0
+    ch21 = bridge.e2ee_create_channel(k2, bridge.e2ee_public_key(k1))
+    unwrapped = bridge.e2ee_unwrap_group_shared_key(ch21, enc_shared_key_b64=wrapped)
+    assert isinstance(unwrapped, int) and not isinstance(unwrapped, bool)
+
+
+def test_e2ee_generate_hash_key_chain_to_confirm_e2ee(bridge):
+    """The e-mail device-confirm op runs in the real WASM sandbox.
+
+    ``e2eeChannelGenerateHashKeyChainToConfirmE2EE(channel, encryptedKeyChain)``
+    derives the hash key chain over the login channel; offline we can only pin
+    that the op is recognized and returns non-empty bytes (base64).
+    """
+    k1 = bridge.curvekey_generate()
+    k2 = bridge.curvekey_generate()
+    channel = bridge.e2ee_create_channel(k1, bridge.e2ee_public_key(k2))
+    enc_keychain = base64.b64encode(bytes(range(64))).decode()
+    chain = bridge.e2ee_generate_hash_key_chain_to_confirm_e2ee(channel, enc_keychain)
+    assert isinstance(chain, str) and chain
+    assert len(base64.b64decode(chain)) > 0
 
 
 # ---------------------------------------------------------------------------

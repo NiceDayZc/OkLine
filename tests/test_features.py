@@ -214,6 +214,36 @@ def test_send_image_flow(make_api):
     assert obs[0]["data"] == b"\xff\xd8imagebytes"
 
 
+def test_obs_object_endpoints_via_client(make_api):
+    """OBS .obs metadata endpoints use FD auth (encrypted token) and the
+    X-Talk-Meta builder, mirroring the extension."""
+    from conftest import FakeResp
+
+    from okline.obs import build_talk_meta
+
+    def responder(method, url, kw):
+        if url.endswith("acquireEncryptedAccessToken"):
+            return enveloped("hdr\x1eFEATENC\x1ftail")
+        if url.endswith(".obs"):
+            return FakeResp(200, {"size": 1})
+        return enveloped({})
+
+    api = make_api(responder)
+    api.obs.resource_info("/r/talk/m/msg9")
+    last = api.transport.session.last
+    assert last["url"].endswith("/r/talk/m/msg9/info.obs")
+    h = last["headers"]
+    assert h["X-Line-Access"] == "FEATENC"  # encrypted, lazily acquired
+    assert h["X-Line-Application"] == "CHROMEOS\t3.7.2\tChrome_OS\t"
+
+    api.obs.playback_info("/r/talk/v/msg9", message_id="msg9")
+    last = api.transport.session.last
+    assert last["url"].endswith("/r/talk/v/msg9/playback.obs")
+    assert last["params"]["modelName"] == "CHROMEOS"
+    assert last["params"]["networkType"] == "WiFi"
+    assert last["headers"]["X-Talk-Meta"] == build_talk_meta("msg9")
+
+
 def test_cli_has_send_command():
     from okline.__main__ import build_parser
 

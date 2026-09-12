@@ -11,14 +11,14 @@ paste the full exchange for any endpoint. Implementation:
 ```python
 from okline import OkLine
 
-api = OkLine(access_token="...")     # record=True by default
+api = OkLine(access_token="...")  # record=True by default
 api.get_profile()
 api.send_text("u...", "hi")
 
-api.last                 # the most recent Exchange (or None)
-api.history              # list[Exchange], oldest → newest
-print(api.last.pretty()) # one HTTP transcript, secrets redacted
-print(api.dump())        # every call this session, as one string
+api.last  # the most recent Exchange (or None)
+api.history  # list[Exchange], oldest → newest
+print(api.last.pretty())  # one HTTP transcript, secrets redacted
+print(api.dump())  # every call this session, as one string
 ```
 
 A transcript looks like:
@@ -27,7 +27,7 @@ A transcript looks like:
 #1 [OK] POST /api/talk/thrift/Talk/TalkService/getProfile   (Talk.TalkService.getProfile)
 ======================================================================
   -> POST https://line-chrome-gw.line-apps.com/api/talk/thrift/Talk/TalkService/getProfile
-  >  X-Line-Application: CHROMEOS	3.7.2	Chrome_OS
+  >  X-Line-Chrome-Version: 3.7.2
   >  X-Line-Access: <redacted>
   >  X-Hmac: <redacted>
   >  body: [ 2 ]
@@ -50,16 +50,16 @@ Methods: `.pretty(redact=True)`, `.to_dict(redact=True)`, `.to_har_entry(redact=
 ## Filtering
 
 ```python
-api.recorder.find("Talk.TalkService.sendMessage")   # all calls to one endpoint
-api.history[-5:]                                     # last 5 calls
+api.recorder.find("Talk.TalkService.sendMessage")  # all calls to one endpoint
+api.history[-5:]  # last 5 calls
 ```
 
 ## Exporting
 
 ```python
-api.save_log("session.txt")              # plain transcript (fmt="text", the default)
-api.save_log("session.json", fmt="json") # structured JSON (a list of exchanges)
-api.save_log("session.har", fmt="har")   # open in browser DevTools → Network
+api.save_log("session.txt")  # plain transcript (fmt="text", the default)
+api.save_log("session.json", fmt="json")  # structured JSON (a list of exchanges)
+api.save_log("session.har", fmt="har")  # open in browser DevTools → Network
 ```
 
 The accepted `fmt` values are `"text"`, `"json"` and `"har"`. HAR files import
@@ -84,8 +84,8 @@ By default OkLine **masks secrets** so you can safely paste output:
 Reveal them only when you really need to:
 
 ```python
-print(api.last.pretty(redact=False))              # one-off
-api = OkLine(access_token="...", redact=False)    # whole session
+print(api.last.pretty(redact=False))  # one-off
+api = OkLine(access_token="...", redact=False)  # whole session
 api.save_log("raw.json", fmt="json", redact=False)
 ```
 
@@ -110,9 +110,9 @@ a hook are swallowed.
 ## Controls
 
 ```python
-OkLine(record=False)            # disable recording entirely (api.last is None)
-OkLine(record_capacity=2000)    # keep more history (default 500, ring buffer)
-api.clear_log()                 # drop captured exchanges
+OkLine(record=False)  # disable recording entirely (api.last is None)
+OkLine(record_capacity=2000)  # keep more history (default 500, ring buffer)
+api.clear_log()  # drop captured exchanges
 ```
 
 The recorder is a fixed-size ring buffer, so the oldest exchange is dropped once

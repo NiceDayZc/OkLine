@@ -22,7 +22,7 @@ from okline import OkLine, enums
 
 api = OkLine.from_tokens_file("tokens.json")
 
-for op in api.ops.iter_operations():            # blocks forever; Ctrl-C to stop
+for op in api.ops.iter_operations():  # blocks forever; Ctrl-C to stop
     if op.type == enums.OpType.RECEIVE_MESSAGE and op.message:
         msg = op.message
         sender = msg.get("from")
@@ -31,6 +31,30 @@ for op in api.ops.iter_operations():            # blocks forever; Ctrl-C to stop
         if text:
             api.send_text(sender, f"you said: {text}")
 ```
+
+### The `localRev` resume cursor
+
+The SSE connect carries the extension's full query set — `version=3.7.2`,
+`localRev`, `language` (the X-LAL form of your locale),
+`lastPartialFullSyncs` (JSON), `fullSyncRequestReason` (on the connect that
+asks for a full sync) and `legyHost` when configured
+(`LineConfig(legy_host=...)`, which also adds the `X-Legy-Host` header to
+gateway requests). `localRev` is the resume cursor:
+
+- it is seeded from `getLastOpRevision` before the first open (or from
+  `OperationReceiver(local_rev=...)` if you want to resume a saved position),
+- updated from every received operation's `revision` and from
+  `fullSync`/`partialFullSync` events' `nextRevision`,
+- re-sent on every reconnect, and stale re-delivered operations (revision
+  <= the cursor) are dropped.
+
+So a dropped stream resumes exactly where it left off instead of re-opening
+blind. You can read the current cursor at any time via `api.ops.local_rev`.
+
+> **Note:** the extension authenticates its EventSource with session cookies;
+> Python has no session cookie, so OkLine sends header auth (`X-Line-Access` +
+> `X-Hmac`) on the SSE request instead — a documented, live-verified
+> deviation.
 
 Each `Operation` has these fields:
 
@@ -56,11 +80,11 @@ yields `SSEEvent(event, data, id)`:
 ```python
 for ev in api.ops.stream():
     if ev.event == "ping":
-        continue                       # keep-alive
+        continue  # keep-alive
     if ev.event in ("fullSync", "partialFullSync"):
-        ...                            # the server wants you to re-sync
+        ...  # the server wants you to re-sync
     else:
-        ...                            # default events carry operations
+        ...  # default events carry operations
 ```
 
 Named events you may see: `ping`, `connInfoRevision`, `reconnect`,
@@ -94,13 +118,24 @@ for op in api.ops.iter_operations(reconnect=False):
     handle(op)
 ```
 
-## Long-poll fallback
+## Long-poll utility endpoints
 
-The classic long-poll endpoints are still available if you need them:
+The `LF1`/`JQ` long-poll endpoints are **login PIN-verification** polls in the
+extension (`checkPinCodeVerifiedForEmailWithE2EE` / `checkPinCodeVerifiedForEmail`),
+not an operation-receive fallback — OkLine's email-login device-confirm flow uses
+them. They remain available as a generic blocking round-trip:
 
 ```python
-api.get_last_op_revision()                       # current sync cursor
-api.ops.long_poll(session_id, endpoint="LF1")    # one blocking round-trip
+api.get_last_op_revision()  # current sync cursor
+api.ops.long_poll(session_id, endpoint="LF1")  # one blocking round-trip
+```
+
+## Service notices (lan/notice)
+
+Localized service notices/banners are paged off the `lan.notice` endpoint:
+
+```python
+page = api.ops.lan_notice(lang="en", country="JP")  # -> {documents, nextSeq}
 ```
 
 > **Tip:** combine receiving with [recording](./recording.md) — every reply you

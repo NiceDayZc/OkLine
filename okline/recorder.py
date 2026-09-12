@@ -105,7 +105,9 @@ class Exchange:
         status = self.status if self.status is not None else "-"
         lines.append(f"  <- HTTP {status}   {self.duration_ms:.0f} ms")
         for k, v in self.response_headers.items():
-            if k.lower() in ("content-type", "x-line-resp-code", "content-length"):
+            # only echo back ubiquitous, non-informative headers (the extension
+            # has no x-line-resp-code response header — that was repo invention)
+            if k.lower() in ("content-type", "content-length"):
                 lines.append(f"  <  {k}: {v}")
         body_out = self.response_body if self.response_body is not None else self.response_text
         lines.append("  <  resp: " + _truncate(_fmt(_redact_body(body_out, redact)), max_body))

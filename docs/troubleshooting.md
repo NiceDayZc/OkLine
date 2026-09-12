@@ -41,7 +41,7 @@ has a `chunks` field), your E2EE keys aren't loaded.
 - In code, reuse that session and check readiness:
   ```python
   api = OkLine.from_tokens_file("tokens.json")
-  print(api.e2ee.is_ready())          # must be True to encrypt/decrypt
+  print(api.e2ee.is_ready())  # must be True to encrypt/decrypt
   msg = api.decrypt_message(received)  # returns plaintext `text`
   ```
 - If `is_ready()` is `False`, the keychain wasn't loaded — re-run `okline login`
@@ -73,7 +73,8 @@ cp1252) can still raise `UnicodeEncodeError`. Fix it once at startup:
 
 ```python
 import sys
-sys.stdout.reconfigure(encoding="utf-8")   # Python 3.7+
+
+sys.stdout.reconfigure(encoding="utf-8")  # Python 3.7+
 ```
 
 or set the environment variable before launching Python:
@@ -109,19 +110,33 @@ latest version (`pip install -U okline`).
 
 ## `401` / token expired
 
-- Pass a `refresh_token` so OkLine auto-refreshes on `401`:
+- Pass a `refresh_token` so OkLine auto-refreshes:
   `OkLine(access_token=..., refresh_token=...)`.
+- The gateway usually signals credential expiry with TalkException **code 119**
+  (`MUST_REFRESH_V3_TOKEN`), not HTTP 401. OkLine detects 119, renews the
+  access token via the refresh hook (same path as 401) and replays the request
+  once automatically — no caller action needed.
 - Or refresh manually: `api.auth.refresh_access_token()`.
 - If you loaded the client with `OkLine.from_tokens_file(...)`, the refreshed
   token is written back to the session file automatically.
 - If the session was revoked (logged out on another device), log in again
   (`okline login`).
 
-## `LineMustUpgradeError` / `MUST_UPGRADE`
+## `LineMustUpgradeError` / `REQUEST_MUST_UPGRADE`
 
-The server wants a newer client version. The bundled app version is `3.7.2`; if
+The server wants a newer client version. The trigger is the **outer envelope
+code 10006** (`REQUEST_MUST_UPGRADE`). The bundled app version is `3.7.2`; if
 LINE forces an upgrade you may need a newer `ltsm.wasm` + version string from a
 fresh extension build (`LineConfig(app_version=...)`, `ltsm_origin=...`).
+
+## Transient errors retried automatically (99999 / 115)
+
+OkLine retries a request within the configured retry budget
+(`LineConfig(max_retries=...)`, default 2) when the outer envelope code is
+**99999** (`UNKNOWN_ERROR`) or the nested TalkException code is **115**
+(`SHOULD_RETRY`) — matching the extension's axios retry condition — in addition
+to HTTP 5xx and network failures. If you still see these surface, the retries
+were exhausted; wait and retry your call.
 
 ## Reading errors
 
@@ -136,9 +151,11 @@ except LineApiError as e:
     print(enums.ErrorCode(e.code).name if e.code is not None else "?")
 ```
 
-Common `ErrorCode`s: `AUTHENTICATION_FAILED`(1), `NOT_AUTHORIZED_DEVICE`(8),
-`NOT_FRIEND`(36), `MUST_UPGRADE`(50), `EXPIRED_REVISION`(52),
-`MUST_REFRESH_V3_TOKEN`(119). Full list in
+Common `ErrorCode`s: `AUTHENTICATION_FAILED`(1), `NOT_AVAILABLE_USER`(7),
+`NOT_AUTHORIZED_DEVICE`(8), `NOT_FRIEND`(36), `MUST_UPGRADE`(50),
+`EXPIRED_REVISION`(52), `MUST_REFRESH_V3_TOKEN`(119). Codes **1/7/8** raise
+`LineAuthError` (re-login required; 119 is auto-refreshed first — see
+[token expired](#401--token-expired)). Full list in
 [`okline/enums.py`](../okline/enums.py).
 
 ## Long-poll / SSE seems to hang
@@ -155,7 +172,8 @@ account. You can pace requests automatically with the built-in token bucket:
 
 ```python
 from okline.ratelimit import RateLimiter
-api.transport.rate_limiter = RateLimiter(rate=5, per=1.0)   # ~5 req/s
+
+api.transport.rate_limiter = RateLimiter(rate=5, per=1.0)  # ~5 req/s
 ```
 
 ## Still stuck?
@@ -163,7 +181,7 @@ api.transport.rate_limiter = RateLimiter(rate=5, per=1.0)   # ~5 req/s
 Capture a redacted transcript and inspect it:
 
 ```python
-api.save_log("debug.txt")          # secrets masked by default
+api.save_log("debug.txt")  # secrets masked by default
 print(api.last.pretty())
 ```
 

@@ -137,6 +137,14 @@ class FakeBridge:
     def e2ee_unwrap_keychain(self, channel_id: int, enc_keychain_b64: str) -> list:
         return [1, 2]
 
+    def e2ee_generate_hash_key_chain_to_confirm_e2ee(
+        self, channel_id: int, enc_keychain_b64: str
+    ) -> str:
+        """Fake of the LTSM sandbox op
+        ``e2eechannel_generate_hash_key_chain_to_confirm_e2ee`` (used by the
+        E2EE e-mail device-confirm login flow) -> base64 hash key chain."""
+        return base64.b64encode(f"hashchain:{channel_id}".encode()).decode("ascii")
+
     def e2ee_get_key_id(self, handle: int) -> int:
         return 5000000 + int(handle)
 
@@ -146,6 +154,26 @@ class FakeBridge:
     def e2ee_load_key(self, exported_b64: str) -> int:
         raw = base64.b64decode(exported_b64).decode()
         return int(raw.split(":", 1)[1])  # round-trips e2ee_export_key
+
+    # -- E2EE channel / group-key ops (framing-only fakes) --------------------
+    def e2ee_create_channel_with_pubkey(self, key_handle: int, peer_pubkey_b64: str) -> int:
+        return 2000 + int(key_handle)
+
+    def e2ee_public_key_for_handle(self, key_handle: int) -> str:
+        return base64.b64encode(bytes([int(key_handle) & 0xFF]) * 32).decode("ascii")
+
+    def e2ee_encrypt_v1(self, channel_id: int, *, plaintext_b64: str) -> str:
+        # echo the plaintext as the "ciphertext" (framing tests re-parse it)
+        return plaintext_b64
+
+    def e2ee_encrypt_v2(self, channel_id: int, **kw: Any) -> str:
+        return kw["plaintext_b64"]
+
+    def e2ee_wrap_group_shared_key(self, channel_id: int, *, key_handle: int) -> str:
+        return base64.b64encode(f"wrapped:{channel_id}:{key_handle}".encode()).decode("ascii")
+
+    def e2ee_unwrap_group_shared_key(self, channel_id: int, *, enc_shared_key_b64: str) -> int:
+        return 9000 + int(channel_id)
 
     def close(self) -> None:
         pass

@@ -33,6 +33,7 @@ def make_exchange(
     request_headers=None,
     request_body=None,
     response_body=None,
+    response_headers=None,
     response_text="",
     status=200,
     ok=True,
@@ -70,7 +71,7 @@ def make_exchange(
         request_headers=request_headers,
         request_body=request_body if request_body is not None else [0],
         status=status,
-        response_headers={"content-type": "application/json", "x-line-resp-code": "0"},
+        response_headers=response_headers or {"content-type": "application/json"},
         response_body=response_body,
         response_text=response_text,
         duration_ms=duration_ms,
@@ -128,6 +129,22 @@ def test_pretty_marks_errors():
     out = ex.pretty()
     assert "[ERR]" in out
     assert "error: boom" in out
+
+
+def test_pretty_echoes_only_ubiquitous_response_headers():
+    """Only content-type/content-length are echoed from the response headers —
+    the invented ``x-line-resp-code`` fallback is gone, so a response carrying
+    it must NOT have it echoed into the transcript (transport's counterpart is
+    pinned in test_transport.py::test_no_invented_resp_code_header_fallback)."""
+    ex = make_exchange(
+        response_headers={
+            "content-type": "application/json",
+            "x-line-resp-code": "0",
+        }
+    )
+    out = ex.pretty()
+    assert "content-type: application/json" in out  # ubiquitous header echoed
+    assert "x-line-resp-code" not in out
 
 
 # ---------------------------------------------------------------------------

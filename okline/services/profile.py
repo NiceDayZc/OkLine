@@ -23,16 +23,24 @@ class ProfileMixin(ServiceMixin):
         return data
 
     def update_profile_attributes(
-        self, attributes: Mapping[int, str], req_seq: int | None = None
+        self,
+        attributes: Mapping[int, str],
+        req_seq: int | None = None,
+        meta: Mapping[int, Mapping[str, Any]] | None = None,
     ) -> Any:
         """``updateProfileAttributes(reqSeq, request)``.
 
         ``attributes`` maps a :class:`ProfileAttribute` to its new string value.
+        ``meta`` optionally maps the same attribute to a metadata dict sent
+        alongside the value (default ``{}``): the extension populates it with
+        sticon/mention metadata for status messages (main.js ~3588011), e.g.
+        ``meta={STATUS_MESSAGE: {"sticon": [...]}}``.
         """
         if req_seq is None:
             req_seq = self.next_req_seq()
         profile_attributes = {
-            str(int(k)): {"value": v, "meta": {}} for k, v in attributes.items()
+            str(int(k)): {"value": v, "meta": dict(meta.get(k, {})) if meta else {}}
+            for k, v in attributes.items()
         }
         return self.transport.call(
             "Talk.TalkService.updateProfileAttributes",
@@ -42,8 +50,13 @@ class ProfileMixin(ServiceMixin):
     def set_display_name(self, name: str) -> Any:
         return self.update_profile_attributes({int(ProfileAttribute.DISPLAY_NAME): name})
 
-    def set_status_message(self, message: str) -> Any:
-        return self.update_profile_attributes({int(ProfileAttribute.STATUS_MESSAGE): message})
+    def set_status_message(self, message: str, meta: Mapping[str, Any] | None = None) -> Any:
+        """Set the status message; ``meta`` carries sticon/mention metadata
+        (see :meth:`update_profile_attributes`)."""
+        attr = int(ProfileAttribute.STATUS_MESSAGE)
+        return self.update_profile_attributes(
+            {attr: message}, meta={attr: meta} if meta is not None else None
+        )
 
     # -- settings ------------------------------------------------------------
     def get_settings(self, sync_reason: int = int(SyncReason.INITIALIZATION)) -> Any:

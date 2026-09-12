@@ -234,6 +234,15 @@ class LtsmBridge:
             "e2ee_decrypt_v1", channelId=channel_id, ciphertextB64=ciphertext_b64
         )
 
+    def e2ee_encrypt_v1(self, channel_id: int, *, plaintext_b64: str) -> str:
+        """Encrypt (V1) -> base64 ciphertext.
+
+        The V1 counterpart of :meth:`e2ee_decrypt_v1`:
+        ``e2eeChannelEncryptV1(channel, plaintext)`` — channel + plaintext only.
+        Used for peers whose negotiated ``specVersion`` is 1.
+        """
+        return self._call("e2ee_encrypt_v1", channelId=channel_id, plaintextB64=plaintext_b64)
+
     # -- cross-session key persistence --------------------------------------
     def e2ee_export_key(self, key_handle: int) -> str:
         """Serialize a private-key handle (``E2EEKey.exportKey()``) -> base64."""
@@ -254,6 +263,36 @@ class LtsmBridge:
             "e2ee_unwrap_group_shared_key",
             channelId=channel_id,
             encSharedKeyB64=enc_shared_key_b64,
+        )
+
+    def e2ee_wrap_group_shared_key(self, channel_id: int, *, key_handle: int) -> str:
+        """Wrap a group shared key for one member -> base64 (``registerE2EEGroupKey``).
+
+        ``channel_id`` is the channel between *my* key and that member's public
+        key; ``key_handle`` is the freshly generated shared key (from
+        :meth:`curvekey_generate`).  The wrapped value is what gets uploaded as
+        that member's ``encryptedSharedKeys`` entry.
+        """
+        return self._call(
+            "e2ee_wrap_group_shared_key", channelId=channel_id, keyHandle=key_handle
+        )
+
+    def e2ee_generate_hash_key_chain_to_confirm_e2ee(
+        self, channel_id: int, enc_keychain_b64: str
+    ) -> str:
+        """Hash key chain for the E2EE e-mail device-confirm login flow.
+
+        ``channel_id`` is the channel built from the *login* curve key and the
+        primary device's public key (``e2ee_create_channel``); the payload is
+        the raw ``encryptedKeyChain`` bytes from the LF1 poll.  The returned
+        base64 chain is the second argument of
+        ``Talk.AuthService.confirmE2EELogin(verifier, chain)`` (the bundle's
+        ``e2eeChannelGenerateHashKeyChainToConfirmE2EE``).
+        """
+        return self._call(
+            "e2ee_generate_hash_key_chain_to_confirm_e2ee",
+            channelId=channel_id,
+            encKeyChainB64=enc_keychain_b64,
         )
 
     # -- teardown ------------------------------------------------------------

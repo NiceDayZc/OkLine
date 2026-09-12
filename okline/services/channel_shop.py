@@ -16,8 +16,10 @@ class ChannelShopMixin(ServiceMixin):
     def issue_channel_token(self, channel_id: str = TIMELINE_CHANNEL_ID) -> Any:
         """``issueChannelToken(channelId)`` -> ChannelToken.
 
-        Caches the returned ``channelAccessToken`` so subsequent requests can
-        send the ``X-Line-ChannelToken`` header automatically.
+        Caches the returned ``channelAccessToken``; it is then sent as the
+        ``X-Line-ChannelToken`` header **only** on gateway ``/api/timeline/``
+        requests (the extension's headerMapper scope) and on ``/r/myhome/``
+        OBS URLs — never on thrift calls.
         """
         data = self.transport.call("Talk.ChannelService.issueChannelToken", [channel_id])
         if isinstance(data, dict):

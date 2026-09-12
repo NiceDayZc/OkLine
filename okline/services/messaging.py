@@ -27,10 +27,16 @@ class MessagingMixin(ServiceMixin):
         send with code 82 ("can not send using plain mode"); when an E2EE manager
         is ready (after :meth:`qr_login`) the message is then encrypted and
         re-sent automatically.  Pass ``encrypt=True`` to seal up-front.
+
+        Sealed sends go through :meth:`E2EEManager.send_with_retry
+        <okline.e2ee.E2EEManager.send_with_retry>`, which mirrors the
+        extension's E2EE send-error retry semantics (codes 84/86/87/88/90 ->
+        reset negotiation + retry once; 99 -> reset + re-register the group
+        key + retry once).
         """
         e2ee = getattr(self, "e2ee", None)
         if encrypt and e2ee is not None and not message.get("chunks"):
-            message = e2ee.encrypt(message)
+            return e2ee.send_with_retry(message)
         if req_seq is None:
             req_seq = self.next_req_seq()
         try:
@@ -46,10 +52,7 @@ class MessagingMixin(ServiceMixin):
                 and not message.get("chunks")
                 and int(message.get("contentType", 0)) == 0
             ):
-                sealed = e2ee.encrypt(message)
-                return self.transport.call(
-                    "Talk.TalkService.sendMessage", [self.next_req_seq(), sealed]
-                )
+                return e2ee.send_with_retry(message)
             raise
 
     def send_text(self, to: str, text: str, **kw: Any) -> Any:
@@ -241,6 +244,12 @@ class MessagingMixin(ServiceMixin):
         )
 
     def get_messages_by_ids(self, message_ids: Iterable[str]) -> Any:
+        """``getMessagesByIds(ids)`` (arg shape inferred).
+
+        The extension registers this endpoint but never invokes it anywhere in
+        main.js, so the positional arg order cannot be validated against the
+        bundle — treat it as inferred, not wire-confirmed.
+        """
         return self.transport.call("Talk.TalkService.getMessagesByIds", [list(message_ids)])
 
     def get_message_boxes(
@@ -297,7 +306,16 @@ class MessagingMixin(ServiceMixin):
             "Talk.TalkService.getMessageReadRange", [list(chat_ids), sync_reason]
         )
 
-    def determine_media_message_flow(self, chat_mid: str) -> Any:
+    def determine_media_message_flow(self, chat_mid: str) -> dict:
+        """``determineMediaMessageFlow({chatMid})`` -> ``{flowMap, cacheTtlMillis}``.
+
+        ``flowMap`` maps a ContentType to an :class:`okline.enums.E2EEMediaFlow`
+        value — ``V1`` (1) or ``V2`` (2) — selecting which E2EE media-sealing
+        flow the chat uses per media type; ``cacheTtlMillis`` is how long the
+        extension caches the answer before re-querying.  The extension only
+        consults this when a peer's negotiated ``specVersion`` >= 2 and uses the
+        default flow map (IMAGE/VIDEO/… -> V1) otherwise.
+        """
         return self.transport.call(
             "Talk.TalkService.determineMediaMessageFlow", [{"chatMid": chat_mid}]
         )

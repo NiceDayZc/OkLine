@@ -269,6 +269,22 @@ async function handle(req) {
         payload: b64ToBytes(req.ciphertextB64) });
       return bytesToB64(pt);
     }
+    case 'e2ee_encrypt_v1': {
+      // old format: encryptV1(channel, plaintext) — payload IS the raw plaintext
+      // bytes (no to/from/keyIds/contentType/sequenceNumber), mirroring decryptV1.
+      const ct = await send({ command: 'e2eechannel_encrypt_v1', ltsmKeyId: req.channelId,
+        payload: b64ToBytes(req.plaintextB64) });
+      return bytesToB64(ct);
+    }
+    case 'e2ee_wrap_group_shared_key': {
+      // wrap a group shared key (a key *handle*, e.g. from curvekey_generate)
+      // for a member channel -> base64 wrapped key. NOTE: unlike most ops the
+      // payload is the raw handle number (the sandbox resolves it via its
+      // key-handle map), NOT bytes.
+      const wrapped = await send({ command: 'e2eechannel_wrap_group_shared_key',
+        ltsmKeyId: req.channelId, payload: Number(req.keyHandle) });
+      return bytesToB64(wrapped);
+    }
     case 'e2ee_export_key': {
       // serialize an unwrapped private-key handle so it can be persisted and
       // re-loaded in a future process (cross-session E2EE).
@@ -284,6 +300,15 @@ async function handle(req) {
       // unwraps the group's encrypted shared key -> a group-key handle (number).
       return await send({ command: 'e2eechannel_unwrap_group_shared_key',
         ltsmKeyId: req.channelId, payload: b64ToBytes(req.encSharedKeyB64) });
+    case 'e2ee_generate_hash_key_chain_to_confirm_e2ee': {
+      // E2EE e-mail device-confirm login flow: generate the hash key chain
+      // from the primary device's encryptedKeyChain over the login channel.
+      // Payload is the raw encryptedKeyChain bytes; returns the hash key
+      // chain bytes (base64'd here) for confirmE2EELogin(verifier, b64(chain)).
+      const chain = await send({ command: 'e2eechannel_generate_hash_key_chain_to_confirm_e2ee',
+        ltsmKeyId: req.channelId, payload: b64ToBytes(req.encKeyChainB64) });
+      return bytesToB64(chain);
+    }
     default:
       throw new Error('unknown op: ' + req.op);
   }

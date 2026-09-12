@@ -28,6 +28,24 @@ LEGY_BACKUP_BASE = "https://legy-backup.line-apps.com"
 #: Object storage service (media upload / download).
 OBS_BASE = "https://obs.line-apps.com"
 
+#: Alternate CDN hosts for OBS downloads (the extension's
+#: ``defaultConnInfoData.servers`` map in main.js).  Downloads accept a
+#: ``cdn`` key and resolve the base through :data:`OBS_HOSTS`, mirroring the
+#: bundle's ``getServerBaseUrl(cdn ?? "obs")``.
+CDN_OBS_BASE = "https://obs.line-scdn.net"  # cdn_obs
+CDN_PROFILE_BASE = "https://profile.line-scdn.net"  # cdn_profile (profile pictures)
+CDN_STICKER_BASE = "https://stickershop.line-scdn.net"  # cdn_sticker
+CDN_SHOP_BASE = "https://shop.line-scdn.net"  # cdn_shop
+
+#: ``cdn`` key -> base URL for OBS downloads (``"obs"`` is the default host).
+OBS_HOSTS: dict[str, str] = {
+    "obs": OBS_BASE,
+    "cdn_obs": CDN_OBS_BASE,
+    "cdn_profile": CDN_PROFILE_BASE,
+    "cdn_sticker": CDN_STICKER_BASE,
+    "cdn_shop": CDN_SHOP_BASE,
+}
+
 #: All Thrift-over-JSON endpoints, keyed by ``<Namespace>.<Service>.<method>``.
 #: The value is the path appended to ``/api/``.
 THRIFT_ENDPOINTS = {
@@ -131,6 +149,9 @@ SPECIAL_ENDPOINTS = {
     "longpoll.JQ": "api/talk/long-polling/JQ",
     # OAuth-style token refresh: body {"refreshToken": "..."}.
     "auth.tokenRefresh": "api/auth/tokenRefresh",
+    # Localised service notices/banners (paginated via ``nextSeq``; response
+    # is ``{documents, nextSeq}``).
+    "lan.notice": "api/lan/notice",
     # OBS media helpers.
     "obs.uploadProfile": "api/obs/uploadProfile",
     "obs.copyForMessage": "api/obs/copyForMessage",

@@ -440,6 +440,23 @@ def test_get_message_read_range_custom_sync_reason(api, last_request):
 
 
 # ---------------------------------------------------------------------------
+# get_messages_by_ids
+# ---------------------------------------------------------------------------
+def test_get_messages_by_ids_body_shape(api, last_request):
+    """``getMessagesByIds(ids)`` — arg shape inferred (bundle never calls it)."""
+    api.get_messages_by_ids(["m1", "m2"])
+
+    assert_method(api, "getMessagesByIds")
+    assert last_request(api) == [["m1", "m2"]]
+
+
+def test_get_messages_by_ids_materialises_iterable(api, last_request):
+    """A generator argument becomes a concrete JSON list."""
+    api.get_messages_by_ids(iter(["m1"]))
+    assert last_request(api) == [["m1"]]
+
+
+# ---------------------------------------------------------------------------
 # determine_media_message_flow
 # ---------------------------------------------------------------------------
 def test_determine_media_message_flow_body_shape(api, last_request):
@@ -449,6 +466,26 @@ def test_determine_media_message_flow_body_shape(api, last_request):
     assert_method(api, "determineMediaMessageFlow")
     body = last_request(api)
     assert body == [{"chatMid": GROUP_MID}]
+
+
+def test_determine_media_message_flow_returns_flow_map(make_api):
+    """The result is ``{flowMap, cacheTtlMillis}`` with E2EEMediaFlow values.
+
+    flowMap keys are ContentType numbers (JSON stringifies object keys).
+    """
+    from okline.enums import E2EEMediaFlow
+
+    flow = {
+        "flowMap": {
+            str(int(ContentType.IMAGE)): int(E2EEMediaFlow.V2),
+            str(int(ContentType.VIDEO)): int(E2EEMediaFlow.V1),
+        },
+        "cacheTtlMillis": 3600000,
+    }
+    api = make_api(lambda m, u, kw: enveloped(flow))
+    result = api.determine_media_message_flow(GROUP_MID)
+    assert result == flow
+    assert result["flowMap"][str(int(ContentType.IMAGE))] == int(E2EEMediaFlow.V2)
 
 
 # ---------------------------------------------------------------------------

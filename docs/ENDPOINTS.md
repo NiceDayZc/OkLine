@@ -3,9 +3,12 @@
 Gateway: `https://line-chrome-gw.line-apps.com`  ·  App: `CHROMEOS	3.7.2	Chrome_OS	`
 
 All Thrift endpoints are `POST /api/<path>` with a JSON **array of positional args** as the body.
-Headers on every authenticated call: `X-Line-Access`, `X-Line-Application`, `X-Line-Chrome-Version: 3.7.2`.
+Headers on gateway calls: `X-Line-Access`, `X-Line-Chrome-Version: 3.7.2` (+ `X-LAL`, `X-Hmac`).
+`X-Line-Application` is **never** sent on gateway requests — the extension sets it
+exclusively on private OBS resource fetches; `X-Line-ChannelToken` is gateway
+`/api/timeline/`-only (plus `/r/myhome/` OBS URLs).
 
-Total endpoints documented: **84**
+Total endpoints documented: **87**
 
 
 ## Authentication / Login / Identity
@@ -811,6 +814,7 @@ Total endpoints documented: **84**
   - `fullSyncRequestReason` *(string (query param))* — Optional reason for requesting a full sync on (re)connect; deleted from query in finally block after connect.
   - `lastPartialFullSyncs` *(string (query param, JSON))* — JSON.stringify(this.lastPartialFullSyncs): map of category->timestamp used to bound partial full-sync windows.
   - `localRev` *(string/i64 (query param))* — Local revision pointer. Updated to nextRevision from FULL_SYNC events: transport.query.localRev = nextRevision. This is the revision/fetchOps cursor.
+  - `language` *(string (query param))* — The X-LAL underscore form of the locale (e.g. `en_US`, `ja_JP`), from the bundle's Up map.
   - `legyHost` *(string (query param, optional))* — Set when FR().legyHost is present (LEGY routing host).
 - **Body example:** `GET https://line-chrome-gw.line-apps.com/api/operation/receive?version=3.7.2&lastPartialFullSyncs=%7B%7D&localRev=<rev>   (withCredentials:true; cookie 'lct' used; Accept: text/event-stream)`
 - **Returns:** Server-Sent Events stream. customEvents handled: ping (connInfo keepalive, PingInterceptor range [20000,20000] step 0 spare 10000 -> expect ~20s ping), connInfoRevision (event 'connInfoRevision', data=Number revision -> FA.revision), reconnect (triggers reconnect), talkException (data=JSON TalkException -> handled/possibly kickout), fullSync (data={reasons:list, nextRevision} -> sets localRev=next
@@ -832,6 +836,17 @@ Total endpoints documented: **84**
   - `X-LST` *(i32 (header, ms))* — Long-poll timeout in milliseconds = 180000 (1.8e5).
 - **Body example:** `GET https://line-chrome-gw.line-apps.com/api/talk/long-polling/JQ  headers: { X-Line-Session-ID: <sessionId>, X-LST: 180000 }  (retryCount:0)`
 - **Returns:** response.result.verifier (returned to caller). Part of the secondary login / pin verification long-poll; yields the verifier string. retryCount:0 (no retry).
+
+### `Lan.notice`
+
+- **Path:** `GET /api/lan/notice`
+- **Args (positional):**
+  - `lang` *(string (query param))* — Locale for the notices (e.g. `en`).
+  - `country` *(string (query param))* — Country code (e.g. `JP`).
+  - `nextSeq` *(i64 (query param))* — Paging cursor; start at 0 and pass the response's `nextSeq` for the next page.
+  - `includeBody` *(bool (query param))* — Always `true` in the extension.
+- **Body example:** `GET https://line-chrome-gw.line-apps.com/api/lan/notice?lang=en&country=JP&nextSeq=0&includeBody=true`
+- **Returns:** `{documents: list<service notice/banner documents>, nextSeq}` — localized service notices fetched before/after login (filtered client-side on `extras.showTimingWhenLogin`). Exposed as `api.ops.lan_notice(lang=..., country=..., next_seq=...)`.
 
 ### `OBS.uploadProfile`
 
@@ -861,4 +876,24 @@ Total endpoints documented: **84**
   - `xObsParams` *(string (header X-Obs-Params))* — Base64/encoded OBS params header.
   - `offset` *(i64)* — Chunk offset; produces Range header `bytes <offset>-<size-1>/<size>`.
 - **Body example:** `POST https://obs.line-apps.com/r/talk/<sid>/<oid>  headers:{ X-Obs-Params:<params>, range: bytes 0-1023/1024, [headerMapper FD adds auth] }`
-- **Returns:** OBS object headers/blob. Header auth (FD headerMapper): for URLs containing /r/<channelHost>/ (e.g. /r/myhome/) it sets X-Line-ChannelToken=<channelAccessToken from issueChannelToken('1341209850')>; otherwise sets X-Line-Access=<encrypted access token getEncryptedAccessToken(OBS_GENERAL)> AND X-Line-Application="CHROMEOS\t3.7.2\tChrome_OS\t". Download paths additionally set X-Talk-Meta (lB(message
+- **Returns:** OBS object headers/blob. Header auth (FD headerMapper): for URLs containing /r/<channelHost>/ (e.g. /r/myhome/) it sets X-Line-ChannelToken=<channelAccessToken from issueChannelToken('1341209850')>; otherwise sets X-Line-Access=<encrypted access token getEncryptedAccessToken(OBS_GENERAL)> AND X-Line-Application="CHROMEOS\t3.7.2\tChrome_OS\t". Download paths additionally set X-Talk-Meta (lB(messageId): a base64(JSON({message: base64(thrift blob)})) wrapper — see `okline.obs.build_talk_meta`). Public OBS GETs carry no auth header at all (headerMapper void).
+
+### `OBS (resource info).info.obs`
+
+- **Path:** `GET <obs-base>/<path>/info.obs`
+- **Args (positional):**
+  - `<path>` *(string (URL path))* — The raw OBS object path (`/r/<service>/<sid>/<oid>`).
+- **Body example:** `GET https://obs.line-apps.com/r/talk/<sid>/<oid>/info.obs  [FD headerMapper auth]`
+- **Returns:** Resource info for the object (used to check it before downloading). Same FD auth as the direct-resource endpoint; exposed as `api.obs.resource_info(path)`.
+
+### `OBS (playback).playback.obs`
+
+- **Path:** `GET <obs-base>/<path>/playback.obs`
+- **Args (positional):**
+  - `modelName` *(string (query param))* — Always `"CHROMEOS"` in the extension.
+  - `networkType` *(string (query param))* — Always `"WiFi"`.
+  - `lang` *(string (query param))* — Playback locale (short form: `en`, `ja`, `ko`, `zh-Hans`, `zh-Hant`; derived from the configured locale).
+  - `X-Talk-Meta` *(string (header, optional))* — The thrift messageId blob (lB), required for E2EE (`/r/talk/em`) paths.
+- **Body example:** `GET https://obs.line-apps.com/r/talk/m/<mid>/<oid>/playback.obs?modelName=CHROMEOS&networkType=WiFi&lang=en`
+- **Returns:** Video playback info (stream/track metadata). FD auth; exposed as `api.obs.playback_info(path, message_id=...)`.
+

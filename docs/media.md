@@ -9,7 +9,7 @@ helper takes the destination **mid** and a **path** (or raw `bytes`):
 api.send_image("c0123...group", "photo.jpg")
 api.send_video("u0123...friend", "clip.mp4")
 api.send_audio("u0123...friend", "note.m4a")
-api.send_file("c0123...group",  "report.pdf")
+api.send_file("c0123...group", "report.pdf")
 ```
 
 Each returns the server's response for the sent message (with its real `id`). You
@@ -51,13 +51,49 @@ Media is a two-step flow (the LINE V1 "OBS" upload):
 This all happens inside the one `send_image` / `send_file` / … call — you don't
 drive the two steps yourself.
 
+## OBS authentication (the extension's headerMapper)
+
+Raw OBS requests never carry your ordinary access token. OkLine mirrors the
+extension's `FD` headerMapper exactly:
+
+- **`/r/myhome/` URLs** (timeline/VOOM covers) authenticate with the
+  **channel access token** (`X-Line-ChannelToken`, issued lazily via
+  `issueChannelToken` and cached).
+- **Every other private OBS resource** authenticates with an **encrypted
+  access token** (`X-Line-Access`, type `OBS_GENERAL`, acquired lazily via
+  `acquireEncryptedAccessToken`) plus `X-Line-Application:
+  "CHROMEOS\t3.7.2\tChrome_OS\t"`.
+- **Public objects** are fetched with no auth header at all
+  (`download_object(..., public=True)`).
+
+Tokens are acquired and cached automatically — you never supply them.
+
+## X-Talk-Meta, /info.obs and /playback.obs
+
+E2EE media downloads from `/r/talk/em` paths require the `X-Talk-Meta` header —
+a base64(JSON({message: base64(thrift blob)})) wrapper around the message id.
+OkLine builds it for you (`okline.obs.build_talk_meta(message_id)`; pass
+`message_id=` to `download_object` / `playback_info`).
+
+Two OBS metadata endpoints are available for inspecting objects:
+
+```python
+api.obs.resource_info("/r/talk/m/<mid>/<oid>")  # GET <path>/info.obs
+api.obs.playback_info(path, message_id="msg-id")  # GET <path>/playback.obs
+# playback sends modelName="CHROMEOS", networkType="WiFi", lang=<locale>
+```
+
+Downloads can also be routed to a specific CDN host
+(`download_object(..., cdn="cdn_profile")` or `host="..."`).
+
 ## Media and Letter Sealing
 
-Media uses the V1 (non-E2EE) flow, so a file sent into a **Letter-Sealed DM is
-not sealed** — only text is end-to-end encrypted. The bytes go through OBS
-unsealed even if the chat's text messages are encrypted. If that matters for your
-use case, send sensitive content as text via
-[`send_encrypted_text`](./e2ee.md) instead.
+Since 2.8.0 OkLine implements the extension's **V2 sealed-media flow**: when
+the chat's negotiated media flow is V2, the file blob is end-to-end encrypted
+(HKDF `FileEncryption` AES-CTR + HMAC) and the key material (`ENC_KM`) is
+sealed into the message ciphertext. In chats that only allow the V1 flow, media
+is sent unsealed — text is still always sealeable. See
+[Letter Sealing](./e2ee.md#sealed-media) for the details.
 
 Media send works for chats that allow plain mode (most groups and ordinary DMs).
 
