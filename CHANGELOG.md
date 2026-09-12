@@ -4,6 +4,37 @@ All notable changes to OkLine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.2] - 2026-09-13
+
+Group-A live-test follow-up (every fix below was found by exercising the
+live servers and is live-verified):
+
+- **`tokenRefresh` actually works now** — two bugs cancelled each other
+  out only in offline tests: (1) the request must carry the (possibly
+  expired) access token as `X-Line-Access` like the extension's gateway
+  headerMapper does (without it the endpoint answers 10004
+  REQUEST_NEED_LOGIN forever — live-tested); (2) a 401 from tokenRefresh
+  itself must never fire the refresh hook — that recursion looped
+  tokenRefresh endlessly on a consumed refresh token (live-tested).
+  Verified live: refresh rotates the refresh token, the new pair keeps
+  working, and the schedule round-trips through the session file.
+- **`send_location` auto-seal on code 82** — the re-seal fallback only
+  matched contentType 0 (text); location (sealable per the extension's
+  sL whitelist) was rejected by sealed chats and never re-sent. Now uses
+  `SEALABLE_CONTENT_TYPES` (live-tested: location to self-chat sends).
+- **`lan_notice` boolean serialization** — `includeBody` urlencoded as
+  Python `True` fails the endpoint's JSON-schema validation (10003);
+  it now serializes lowercase `true` (live-tested 200 + documents).
+- Live-verified this round: owned-sticker send (after
+  `get_owned_product_summaries` with the account's region), contact /
+  file / audio / video sends, timeline homeId + getCover (needs the
+  channel token issued first), myhome cover download via the OBS
+  channel-token branch (132 KB JPEG), `chatlog` CLI decrypting sealed
+  history, and op-stream delivery (SEND_REACTION observed live).
+- Known limitation (not a bug): FLEX sends are rejected with code 11
+  "Incompatible app version" — the Chrome extension itself never sends
+  FLEX (it only renders it); flex sending is bot/official-account-only.
+
 ## [2.9.1] - 2026-09-13
 
 Live-testing follow-up (everything below was found by exercising 2.9.0

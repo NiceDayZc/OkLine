@@ -208,7 +208,9 @@ def test_lan_notice_params_and_paging_shape():
     rx = OperationReceiver(t)
     page = rx.lan_notice("en", "JP")
     assert page == {"documents": [{"id": "a"}], "nextSeq": 5}
-    assert t.session.last["params"] == {"lang": "en", "country": "JP", "includeBody": True}
+    # includeBody must serialize lowercase ("true") — the endpoint JSON-schema
+    # validates the query params (live-tested: Python's "True" -> 10003)
+    assert t.session.last["params"] == {"lang": "en", "country": "JP", "includeBody": "true"}
     # follow the cursor
     assert rx.lan_notice("en", "JP", 5) == {"documents": [{"id": "b"}]}
     assert t.session.last["params"]["nextSeq"] == 5

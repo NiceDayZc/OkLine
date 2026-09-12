@@ -469,12 +469,16 @@ class Transport:
             # extension's *gateway* client does not retry on HTTP 401 (only its
             # OBS client does; the talk gateway signals credential expiry via
             # TalkException 119 below).  We keep the 401 renew-and-retry as a
-            # safety net for gateways that answer 401 instead.
+            # safety net for gateways that answer 401 instead — but NEVER for
+            # tokenRefresh itself: that call IS the refresh; firing the hook
+            # from inside it recurses forever (live-tested: a consumed refresh
+            # token made every retry re-POST tokenRefresh in a tight loop).
             if (
                 resp.status_code == 401
                 and allow_refresh
                 and not refreshed
                 and self._refresh_hook
+                and "/auth/tokenRefresh" not in path
             ):
                 refreshed = True
                 if self._refresh_hook():

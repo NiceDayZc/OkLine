@@ -1044,7 +1044,22 @@ class AuthFlows:
                     f"max={policy.max_delay_ms}ms, multiplier={policy.multiplier})"
                 )
             try:
-                data = self._t.post_json(path, {"refreshToken": rt}, require_auth=False)
+                # The extension's gateway headerMapper attaches X-Line-Access to
+                # EVERY request when a token exists — tokenRefresh included
+                # (live-tested: without it the endpoint answers 10004
+                # REQUEST_NEED_LOGIN even with a valid refresh token).
+                # require_auth must stay False so a token-less first refresh
+                # (pure re-login flow) still proceeds.
+                data = self._t.post_json(
+                    path,
+                    {"refreshToken": rt},
+                    require_auth=False,
+                    extra_headers=(
+                        {"X-Line-Access": self._t.tokens.access_token}
+                        if self._t.tokens.access_token
+                        else None
+                    ),
+                )
             except LineApiError as exc:
                 if exc.code == _CODE_AUTH_INVALID_REQUEST:
                     # hard kickout — the extension's interceptor maps this to

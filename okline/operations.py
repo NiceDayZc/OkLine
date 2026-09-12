@@ -586,7 +586,9 @@ class OperationReceiver:
         params: dict[str, Any] = {"lang": lang, "country": country}
         if next_seq is not None:
             params["nextSeq"] = next_seq
-        params["includeBody"] = include_body
+        # the endpoint JSON-schema-validates the query: a Python bool urlencodes
+        # as "True" and is rejected (10003) — the wire needs lowercase "true"
+        params["includeBody"] = "true" if include_body else "false"
         path = "/" + ep.SPECIAL_ENDPOINTS["lan.notice"]
         resp = self._t.get(path, params=params)
         return self._t._decode(resp, path=path)

@@ -1129,3 +1129,41 @@ class TestPublicErrorSurface:
             t.call(PROFILE, [0])
         assert type(ei.value) is LineAuthError
         assert not isinstance(ei.value, _MustRefreshTokenError)
+
+
+class TestTokenRefreshNeverSelfRefreshes:
+    """A 401 from /api/auth/tokenRefresh must NOT fire the refresh hook:
+    that call IS the refresh — firing the hook from inside it recurses
+    forever (live-tested: a consumed refresh token looped tokenRefresh)."""
+
+    def test_401_on_tokenrefresh_does_not_fire_hook(self):
+        fired = []
+        t = make_transport(lambda m, u, kw: FakeResp(401, {"message": "no"}))
+        t._refresh_hook = lambda: fired.append(1) or True
+        with pytest.raises(LineApiError):
+            t.post_json(
+                "/api/auth/tokenRefresh",
+                {"refreshToken": "R"},
+                require_auth=False,
+            )
+        assert fired == []
+        assert len(t.session.calls) == 1  # and no retry storm
+
+    def test_401_on_other_paths_still_fires_hook(self):
+        fired = []
+        state = {"n": 0}
+
+        def responder(m, u, kw):
+            if u.endswith("getProfile"):
+                state["n"] += 1
+                return (
+                    FakeResp(401, {"message": "no"})
+                    if state["n"] == 1
+                    else enveloped({"ok": 1})
+                )
+            raise AssertionError("unexpected " + u)
+
+        t = make_transport(responder)
+        t._refresh_hook = lambda: fired.append(1) or True
+        assert t.call(PROFILE, [0]) == {"ok": 1}
+        assert fired == [1]

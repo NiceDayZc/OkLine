@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from ..e2ee import SEALABLE_CONTENT_TYPES
 from ..enums import PredefinedReactionType, SyncReason
 from ..exceptions import LineApiError
 from ..models import Message
@@ -42,15 +43,17 @@ class MessagingMixin(ServiceMixin):
         try:
             return self.transport.call("Talk.TalkService.sendMessage", [req_seq, message])
         except LineApiError as exc:
-            # 82 == E2EE_RETRY_ENCRYPT — seal and resend, once.  Only text/location
-            # (contentType NONE=0) can be Letter-Sealed this way; a media/sticker
-            # placeholder (IMAGE/VIDEO/…) must NOT be re-sealed (it has no text).
+            # 82 == E2EE_RETRY_ENCRYPT — seal and resend, once.  Only sealable
+            # content types (text AND location — live-tested: a location to a
+            # sealed chat was rejected with 82 and never re-sent) may be
+            # Letter-Sealed this way; a media placeholder (IMAGE/VIDEO/…) must
+            # NOT be re-sealed (it has no text; its blob goes through OBS).
             if (
                 exc.code == 82
                 and e2ee is not None
                 and e2ee.is_ready()
                 and not message.get("chunks")
-                and int(message.get("contentType", 0)) == 0
+                and int(message.get("contentType", 0)) in SEALABLE_CONTENT_TYPES
             ):
                 return e2ee.send_with_retry(message)
             raise
