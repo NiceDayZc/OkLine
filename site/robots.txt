@@ -1,0 +1,7 @@
+# OkLine docs — https://nicedayzc.github.io/OkLine/
+# Allow everything; the site is fully static and public.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://nicedayzc.github.io/OkLine/sitemap.xml
