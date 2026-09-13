@@ -1,3 +1,8 @@
+---
+title: "Troubleshooting — OkLine"
+description: "Fixes for common OkLine and LINE API errors — Node.js and X-Hmac signing, QR login problems, encrypted messages, token refresh, rate limits, Unicode."
+---
+
 # Troubleshooting & FAQ
 
 [← docs home](./index.md)
@@ -173,8 +178,8 @@ Common `ErrorCode`s: `AUTHENTICATION_FAILED`(1), `NOT_AVAILABLE_USER`(7),
 `NOT_AUTHORIZED_DEVICE`(8), `NOT_FRIEND`(36), `MUST_UPGRADE`(50),
 `EXPIRED_REVISION`(52), `MUST_REFRESH_V3_TOKEN`(119). Codes **1/7/8** raise
 `LineAuthError` (re-login required; 119 is auto-refreshed first — see
-[token expired](#401--token-expired)). Full list in
-[`okline/enums.py`](../okline/enums.py).
+[token expired](#401-token-expired)). Full list in
+[`okline/enums.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/enums.py).
 
 ## Long-poll / SSE seems to hang
 

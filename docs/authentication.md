@@ -1,3 +1,8 @@
+---
+title: "LINE QR & Email Login from Python — OkLine"
+description: "LINE QR code and e-mail login from Python — scan a QR in your terminal, no password, no developer account, with token refresh and persisted E2EE keys."
+---
+
 # Authentication & login
 
 [← docs home](./index.md)
@@ -12,7 +17,7 @@ There are three ways to get an authenticated `OkLine`:
 1. **[Reuse a saved session](#1-reuse-a-saved-session-recommended)** — log in once,
    then load the same file forever (this also restores your E2EE keys).
 2. **[QR-code login](#2-qr-code-login)** — scan a code with the LINE app, no password.
-3. **[E-mail + password](#3-e-mail--password-rsa)** — the classic RSA credential flow.
+3. **[E-mail + password](#3-e-mail-password-rsa)** — the classic RSA credential flow.
 
 > 🔒 **Tokens are credentials.** An access token (and a saved session file) grants
 > full access to your LINE account. Never commit, log, paste or share them.
@@ -69,7 +74,9 @@ The CLI does exactly this for you: `okline login` logs in once and saves
 ## 2. QR-code login
 
 Scan a QR with the LINE app on your phone — no password needed. OkLine renders
-the QR as ASCII right in your terminal and drives the whole flow:
+the QR as ASCII right in your terminal and drives the whole flow (for a
+step-by-step walkthrough with troubleshooting, see the dedicated
+[QR login guide](./qr-login.md)):
 
 ```python
 from okline import OkLine
@@ -145,7 +152,7 @@ adopted into the client automatically, so you can call API methods right away.
 
 `with_e2ee=True` (the default) negotiates Letter Sealing (E2EE). The RSA password
 blob is built and encrypted for you in
-[`okline/crypto.py`](../okline/crypto.py).
+[`okline/crypto.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/crypto.py).
 
 After a successful login you can persist the session the same way:
 

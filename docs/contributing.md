@@ -1,3 +1,8 @@
+---
+title: "Contributing to OkLine — Unofficial LINE Python SDK"
+description: "Contribute to OkLine, the unofficial LINE Python SDK — dev setup, the offline pytest suite, adding typed Thrift endpoints, and the PyPI release flow."
+---
+
 # Contributing
 
 [← docs home](./index.md)
@@ -83,7 +88,7 @@ pieces fit together.
 
 ## Test layout
 
-Shared fixtures live in [`tests/conftest.py`](../tests/conftest.py):
+Shared fixtures live in [`tests/conftest.py`](https://github.com/NiceDayZc/OkLine/blob/main/tests/conftest.py):
 
 | Helper / fixture | Use |
 |------------------|-----|
@@ -118,10 +123,10 @@ reqSeq values are auto-generated — assert structure, not exact numbers.
 
 ## Adding a new endpoint
 
-1. **Register the path** in [`okline/endpoints.py`](../okline/endpoints.py)
+1. **Register the path** in [`okline/endpoints.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/endpoints.py)
    under `THRIFT_ENDPOINTS`, keyed `Namespace.Service.method`.
 2. **Add a typed wrapper** to the right mixin in
-   [`okline/services/`](../okline/services/). Follow the positional-arg
+   [`okline/services/`](https://github.com/NiceDayZc/OkLine/tree/main/okline/services/). Follow the positional-arg
    convention — the body is a JSON array of the Thrift args in order; struct args
    are dicts with camelCase field names. Auto-generate `reqSeq` via
    `self.next_req_seq()` when the method takes one.
@@ -152,7 +157,7 @@ Then include the mixin in `services/__init__.py`'s `AllServices` aggregate.
 
 Releases are built and published by GitHub Actions using **PyPI trusted
 publishing** (OIDC) — no API token is stored anywhere. The workflow lives in
-[`.github/workflows/publish.yml`](../.github/workflows/publish.yml) and triggers
+[`.github/workflows/publish.yml`](https://github.com/NiceDayZc/OkLine/blob/main/.github/workflows/publish.yml) and triggers
 when you push a version tag (`vX.Y.Z`) or publish a GitHub Release. It builds the
 sdist + wheel, runs `twine check`, then publishes via OIDC.
 

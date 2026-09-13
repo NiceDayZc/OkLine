@@ -1,4 +1,11 @@
+---
+title: "LINE Thrift Endpoint Reference (Chrome Extension API) — OkLine"
+description: "Every LINE Chrome extension Thrift endpoint OkLine calls — paths, positional arguments, struct fields, enums and example request bodies in one reference."
+---
+
 # LINE Chrome API — Complete Endpoint Reference
+
+[← docs home](./index.md)
 
 Gateway: `https://line-chrome-gw.line-apps.com`  ·  App: `CHROMEOS	3.7.2	Chrome_OS	`
 

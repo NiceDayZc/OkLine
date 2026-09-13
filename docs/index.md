@@ -1,16 +1,33 @@
+---
+title: "OkLine — Unofficial LINE Python SDK: QR Login, Personal Account Automation, E2EE"
+description: "Automate your own LINE Messenger account from Python. QR-code login, send/receive messages, decrypt E2EE Letter Sealing. No developer account, no webhook, no 200-message cap. pip install okline."
+---
+
 # OkLine documentation
 
-**OkLine** is a complete, high-level Python client and CLI for the API used by the
-official **LINE Chrome extension** (`CHROMEOS` 3.7.2). It reproduces the real
-protocol faithfully — gateway, headers, payloads, the mandatory `X-Hmac`
-signature (computed by LINE's own `ltsm.wasm`), QR + e-mail login, E2EE *Letter
-Sealing*, the SSE event stream and OBS media — wrapped in a friendly Python API,
-a typed method per endpoint, a polished interactive menu, and a ~30-command CLI.
-Every request and response is recorded so you can inspect or paste it.
+**OkLine** is the maintained, unofficial Python SDK for automating **your own
+personal LINE Messenger account**: log in by scanning a **QR code** in your
+terminal, send and receive messages and media as yourself, and decrypt **E2EE
+Letter Sealing** — with no developer account, no bot channel, and no webhook.
 
-> **Unofficial.** Not affiliated with LINE Corporation. Use it only with your
-> own account and in compliance with LINE's Terms of Service. Treat tokens and
-> E2EE keys like passwords.
+Under the hood it is a complete, high-level Python client and CLI for the API
+used by the official **LINE Chrome extension** (`CHROMEOS` 3.7.2). It
+reproduces the real protocol faithfully — gateway, headers, payloads, the
+mandatory `X-Hmac` signature (computed by LINE's own `ltsm.wasm`), QR + e-mail
+login, E2EE *Letter Sealing*, the SSE event stream and OBS media — wrapped in a
+friendly Python API, a typed method per endpoint, a polished interactive menu,
+and a ~30-command CLI. Every request and response is recorded so you can
+inspect or paste it.
+
+> ✅ Verified against LINE Chrome extension 3.7.2 — September 2026 (v2.9.2)
+
+> **Unofficial — and candid about the risk.** OkLine is not affiliated with
+> LINE Corporation. Automating a personal account technically violates LINE's
+> Terms of Service; LINE Corp forced code removal from a similar project
+> (carpedm20-LINE) in 2014, and account suspension is a real possibility. Use
+> it only with your own account, keep your request rate disciplined, and treat
+> tokens and E2EE keys like passwords. The [FAQ](./faq.md) covers the ban-risk
+> question head-on.
 
 ## Features
 

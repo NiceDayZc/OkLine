@@ -1,3 +1,8 @@
+---
+title: "Send LINE Messages, Stickers & Files from Python — OkLine"
+description: "Send LINE messages from Python as yourself — text, replies, stickers, location, contacts and files to your own contacts and groups, no bot channel."
+---
+
 # Sending messages
 
 [← docs home](./index.md)
@@ -159,7 +164,7 @@ api.send_message(msg)
 
 `Message` factories: `text`, `sticker`, `location`, `contact`, `flex`,
 `image`, `video`, `audio`, `file`, and `media_ref` (reference an OBS object you
-already uploaded). See [`okline/models.py`](../okline/models.py).
+already uploaded). See [`okline/models.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/models.py).
 
 ## Marking chats read / hidden
 

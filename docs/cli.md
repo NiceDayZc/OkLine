@@ -1,3 +1,8 @@
+---
+title: "LINE CLI — Send Messages & Automate from the Terminal — OkLine"
+description: "A full LINE client in your terminal — send messages and files, read and decrypt chats, run auto-reply bots. No developer account, no webhook, no ngrok."
+---
+
 # Command-line interface
 
 [← docs home](./index.md)

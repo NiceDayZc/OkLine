@@ -1,3 +1,8 @@
+---
+title: "Decrypting LINE Letter Sealing (E2EE) in Python — OkLine"
+description: "Decrypt LINE Letter Sealing (E2EE) messages in Python — send and decrypt 1:1 and group chats and sealed media, with keys that persist across sessions."
+---
+
 # Letter Sealing (end-to-end encryption)
 
 [← docs home](./index.md)
@@ -174,3 +179,5 @@ V2 (best-effort check), and only for sealable content types
 - [Sending messages](./messaging.md)
 - [Sending media](./media.md)
 - [Building bots](./bots.md)
+- [FAQ](./faq.md) — including whether unofficial LINE automation can get
+  your account banned

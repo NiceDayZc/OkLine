@@ -1,3 +1,8 @@
+---
+title: "Build a LINE Bot on Your Personal Account in Python — OkLine"
+description: "Build a LINE bot on your own personal account in Python — @bot.on_message handlers, auto-decrypted E2EE, no developer registration, no webhook."
+---
+
 # Building bots
 
 [← docs home](./index.md)

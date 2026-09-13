@@ -1,3 +1,8 @@
+---
+title: "Python Client for the LINE Chrome Extension API (X-Hmac / ltsm.wasm) — OkLine"
+description: "How OkLine speaks the LINE Chrome extension API from Python — the Thrift gateway, X-Hmac signing via the real ltsm.wasm, SSE operations and Letter Sealing."
+---
+
 # How it works (architecture)
 
 [← docs home](./index.md)
@@ -52,10 +57,10 @@ where the key is derived from `SecureKey.loadToken(<per-extension token>)`. The
 `deriveKey` / `Hmac` / `loadToken` primitives live inside LINE's secure WASM
 module **`ltsm.wasm`** (a C++ `LTSM::…` build). Rather than guess at that custom
 crypto, OkLine **runs the real module**: a tiny persistent **Node.js bridge**
-([`okline/ltsm/ltsm_bridge.js`](../okline/ltsm/ltsm_bridge.js)) loads
+([`okline/ltsm/ltsm_bridge.js`](https://github.com/NiceDayZc/OkLine/blob/main/okline/ltsm/ltsm_bridge.js)) loads
 `ltsm.wasm` inside a minimal DOM shim and drives it through the same
 `postMessage` command protocol the extension uses. The Python side
-([`okline/hmac_signer.py`](../okline/hmac_signer.py), class `LtsmBridge`)
+([`okline/hmac_signer.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/hmac_signer.py), class `LtsmBridge`)
 manages that subprocess and exposes `sign()`.
 
 This is why **Node.js 18+ must be on your PATH**. If `node` lives somewhere
@@ -83,11 +88,11 @@ build's `ltsm.wasm` + `ltsmSandbox.js`.
 Messages can be **end-to-end encrypted** ("Letter Sealing"), for both 1:1 chats
 and groups. Two modules cooperate:
 
-* [`okline/e2ee_crypto.py`](../okline/e2ee_crypto.py) — the **pure-Python
+* [`okline/e2ee_crypto.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/e2ee_crypto.py) — the **pure-Python
   framing**: serialize the plaintext, split/re-assemble the ciphertext into the
   `chunks` array, and build the sealed `Message` struct (V1 and V2 wire
   formats). This is independent of the crypto and is round-trip unit-tested.
-* [`okline/e2ee.py`](../okline/e2ee.py) — the **`E2EEManager`**, which ties the
+* [`okline/e2ee.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/e2ee.py) — the **`E2EEManager`**, which ties the
   framing to the WASM bridge (key handles, ECDH channels, encrypt/decrypt) and
   routes a message to 1:1 or group sealing automatically.
 

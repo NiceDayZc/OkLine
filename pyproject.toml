@@ -5,21 +5,27 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "okline"
 version = "2.9.2"
-description = "OkLine — an unofficial, high-level Python client / SDK for the LINE Chrome messaging API (CHROMEOS 3.7.2): send messages, QR & email login, X-Hmac signing, and full response recording."
+description = "Unofficial LINE Messenger SDK for Python — QR login, send/receive, E2EE Letter Sealing, personal-account automation, CLI and bot framework."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "OkLine contributors" }]
 keywords = [
-    "line", "line-api", "line-bot", "line-messaging", "line-messaging-api",
-    "line-chrome", "line-client", "line-sdk", "python-line", "unofficial-line",
-    "messaging", "chat", "chatbot", "automation", "reverse-engineering",
+    "line", "line-messenger", "line-api", "line-bot", "line-messenger-api",
+    "line-chrome", "line-chrome-extension-api", "line-client", "line-sdk",
+    "python-line", "unofficial-line", "line-personal-account",
+    "line-qr-login", "line-login-qr-code", "letter-sealing", "line-e2ee",
+    "e2ee", "end-to-end-encryption", "line-notify-alternative",
+    "linepy-alternative", "line-selfbot", "line-automation", "line-mcp",
+    "chatbot", "automation", "messaging", "reverse-engineering",
     "chrome-extension", "thrift", "x-hmac", "okline",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Natural Language :: Thai",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{#
+  OkLine docs — per-page SEO additions on top of Material 9.7.7
+  (see the SEO brief, section 4).
+
+  Material's community base.html already emits: meta description
+  (front-matter aware), the canonical link (via site_url), author and
+  prev/next links. It emits NO OpenGraph, og:locale, Twitter or JSON-LD
+  tags — those are added here:
+
+  - <title>: front-matter titles already carry the "— OkLine" branding
+    (brief 1.4), so the site_name suffix is only appended when missing,
+    avoiding "... — OkLine - OkLine".
+  - og:* / twitter:* on every page, using the shared 1200x630
+    docs/assets/og-image.png.
+  - og:locale plus EN/TH hreflang pairs for the Thai landing pages
+    (en home <-> th/, qr-login <-> th/qr-login/,
+    line-notify-replacement <-> th/line-notify/).
+  - JSON-LD: BreadcrumbList on every non-home page, SoftwareApplication
+    on the home page.
+#}
+
+{% block htmltitle %}
+  {% if page and page.meta and page.meta.title %}
+    {% set _t = page.meta.title | striptags %}
+  {% elif page and page.title and not page.is_homepage %}
+    {% set _t = page.title | striptags %}
+  {% else %}
+    {% set _t = none %}
+  {% endif %}
+  {% if _t %}
+    {% if config.site_name | lower in _t | lower %}
+      <title>{{ _t }}</title>
+    {% else %}
+      <title>{{ _t }} - {{ config.site_name }}</title>
+    {% endif %}
+  {% else %}
+    <title>OkLine — Unofficial LINE Python SDK: QR Login, Personal Account Automation, E2EE</title>
+  {% endif %}
+{% endblock %}
+
+{% block site_meta %}
+  {{ super() }}
+  {% if page %}
+
+    {# ---------- OpenGraph / Twitter (not emitted by Material itself) ---------- #}
+    {% set _title = (page.meta.title if page.meta and page.meta.title else page.title) | striptags %}
+    {% set _desc = page.meta.description if page.meta and page.meta.description else config.site_description %}
+    {% set _image = config.site_url ~ 'assets/og-image.png' %}
+    <meta property="og:site_name" content="{{ config.site_name }}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ _title }}">
+    <meta property="og:description" content="{{ _desc }}">
+    {% if page.canonical_url %}
+      <meta property="og:url" content="{{ page.canonical_url }}">
+    {% endif %}
+    <meta property="og:image" content="{{ _image }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="OkLine — unofficial LINE Python SDK: QR login in the terminal">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ _title }}">
+    <meta name="twitter:description" content="{{ _desc }}">
+    <meta name="twitter:image" content="{{ _image }}">
+
+    {# ---------- Language: og:locale + EN/TH hreflang pairs ---------- #}
+    {% set _path = page.url or '' %}
+    {% set _th_pages = ['th/', 'th/qr-login/', 'th/line-notify/'] %}
+    {% set _to_th = {'': 'th/', 'qr-login/': 'th/qr-login/', 'line-notify-replacement/': 'th/line-notify/'} %}
+    {% set _to_en = {'th/': '', 'th/qr-login/': 'qr-login/', 'th/line-notify/': 'line-notify-replacement/'} %}
+    <meta property="og:locale" content="{{ 'th_TH' if _path in _th_pages else 'en_US' }}">
+    {% if _path in _to_th %}
+      {% set _en_url = page.canonical_url or config.site_url %}
+      <link rel="alternate" hreflang="en" href="{{ _en_url }}">
+      <link rel="alternate" hreflang="th" href="{{ config.site_url ~ _to_th[_path] }}">
+      <link rel="alternate" hreflang="x-default" href="{{ _en_url }}">
+      <meta property="og:locale:alternate" content="th_TH">
+    {% elif _path in _to_en %}
+      <link rel="alternate" hreflang="en" href="{{ config.site_url ~ _to_en[_path] }}">
+      <link rel="alternate" hreflang="th" href="{{ page.canonical_url or config.site_url }}">
+      <link rel="alternate" hreflang="x-default" href="{{ config.site_url ~ _to_en[_path] }}">
+      <meta property="og:locale:alternate" content="en_US">
+    {% endif %}
+
+    {# ---------- JSON-LD: BreadcrumbList on every non-home page ---------- #}
+    {% set ns = namespace(items=[], cur=page.parent) %}
+    {% for _ in [1, 2, 3] %}
+      {% if ns.cur %}
+        {% set ns.items = [ns.cur] + ns.items %}
+        {% set ns.cur = ns.cur.parent %}
+      {% endif %}
+    {% endfor %}
+    {% if ns.items %}
+      {% set ns.ld = [] %}
+      {% for crumb in ns.items %}
+        {# Sections have no URL of their own — link to their first page. #}
+        {% set first_page = crumb.children | selectattr('is_page') | first %}
+        {% set ns.ld = ns.ld + [{
+          '@type': 'ListItem',
+          'position': loop.index,
+          'name': crumb.title,
+          'item': first_page.canonical_url if first_page else none
+        }] %}
+      {% endfor %}
+      {% set ns.ld = ns.ld + [{
+        '@type': 'ListItem',
+        'position': ns.ld | length + 1,
+        'name': page.title,
+        'item': page.canonical_url
+      }] %}
+      <script type="application/ld+json">{{ {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        'itemListElement': ns.ld
+      } | tojson }}</script>
+    {% endif %}
+
+    {# ---------- JSON-LD: FAQPage on the FAQ page (brief 4) ---------- #}
+    {# Questions are the brief section-2 questions, verbatim; answers are #}
+    {# short summaries of the visible answers in docs/faq.md. #}
+    {% if page.url == 'faq/' %}
+      <script type="application/ld+json">{{ {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        'mainEntity': [
+          {'@type': 'Question', 'name': 'How do I send a LINE message from Python without a developer account?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'pip install okline, log in once by scanning a QR code in your terminal (okline login), then call api.send_text(...) from OkLine.from_tokens_file("tokens.json"). No provider, channel, access token or webhook — OkLine reproduces the official LINE Chrome extension API (CHROMEOS 3.7.2), so LINE sees your own logged-in account. Requires Python 3.9+ and Node.js 18+ for the X-Hmac signature.'}},
+          {'@type': 'Question', 'name': 'How do I log in to LINE from Python with a QR code?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'OkLine.qr_login(on_qr=print_qr, on_pin=...) renders the login QR as ASCII blocks in your terminal; scan it with the LINE app, confirm the PIN, and save the returned session (tokens, certificate and E2EE keychain) with api.save_tokens("tokens.json") so you only ever scan once. The certificate can even skip the PIN on later logins.'}},
+          {'@type': 'Question', 'name': 'How can my bot send messages as ME, to my own contacts and groups?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'The official Messaging API cannot: a bot sends as the bot, only to followers, by opaque userIds learned via webhooks. OkLine runs as your own account, so api.get_all_contact_ids() and api.get_all_chat_mids() return your real contacts and groups, and api.send_text(...) sends from your display name.'}},
+          {'@type': 'Question', 'name': 'How do I read my own LINE chats from Python (without a public webhook or ngrok)?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'OkLine polls the same SSE operation stream the Chrome extension uses, so a plain script on your laptop receives messages — no public HTTPS endpoint, no ngrok, no server. The Bot framework (@bot.on_message) auto-decrypts E2EE messages and hands them to your handler; api.get_recent_messages(chat_mid, n) reads history.'}},
+          {'@type': 'Question', 'name': 'LINE Notify shut down (March 31, 2025) — what’s the free, unlimited replacement in Python?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'OkLine. LINE Notify tokens stopped working on March 31, 2025; the official Messaging API replacement needs a bot account, friending, and has a free-tier push quota (around 200 messages/month at the time of writing). OkLine sends to your own account — yourself, your groups — unlimited and free: api.send_text(api.get_profile()["mid"], "backup finished"). A drop-in migration guide with a reusable notify.py is on the docs site.'}},
+          {'@type': 'Question', 'name': 'How do I decrypt letter-sealed (E2EE) LINE messages and media in Python?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'OkLine implements LINE Letter Sealing for encrypt and decrypt, 1:1 and groups, V1 and V2 wire formats, including HMAC-verified sealed media. Chats that require E2EE reject plain sends with TalkException code 82; OkLine auto-seals api.send_text retries, provides api.send_encrypted_text(...) and api.decrypt_message(...), and the session file carries the E2EE keychain.'}},
+          {'@type': 'Question', 'name': 'What replaces linepy / carpedm20-LINE in 2026?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'OkLine, the maintained successor for the same use case. linepy’s last release was January 2018 and carpedm20/LINE stopped around 2015; both rotted as the protocol moved (new gateway, mandatory X-Hmac signing, E2EE everywhere). OkLine reproduces the LINE Chrome extension API (CHROMEOS 3.7.2) with QR/e-mail login, token refresh, E2EE send+decrypt, a bot framework, a CLI and 703 offline tests; a call-by-call migration table is on the docs site.'}},
+          {'@type': 'Question', 'name': 'Will my LINE account get banned for using an unofficial API?',
+           'acceptedAnswer': {'@type': 'Answer', 'text': 'It is a real risk: automating a personal account violates LINE’s Terms of Service, and LINE Corporation forced code removal from the carpedm20/LINE project in 2014. LINE may suspend, restrict or terminate an account that uses unofficial automation, and a protocol change can break the SDK. Mitigations: use an account you can afford to lose, your own account only (no credential harvesting — tokens stay in your local tokens.json), keep rate discipline (a token bucket ships built in), and reuse one persisted session. For a guaranteed ToS-clean business integration, use the official line-bot-sdk.'}}
+        ]
+      } | tojson }}</script>
+    {% endif %}
+
+    {# ---------- JSON-LD: SoftwareApplication on the home page ---------- #}
+    {# softwareVersion: keep in sync with okline/__init__.py __version__. #}
+    {% if page.is_homepage %}
+      <script type="application/ld+json">{{ {
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        'name': 'OkLine',
+        'url': config.site_url,
+        'description': _desc,
+        'applicationCategory': 'DeveloperApplication',
+        'operatingSystem': 'Linux, macOS, Windows',
+        'programmingLanguage': 'Python',
+        'softwareVersion': '2.9.2',
+        'codeRepository': config.repo_url,
+        'license': 'https://spdx.org/licenses/MIT.html',
+        'downloadUrl': 'https://pypi.org/project/okline/',
+        'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'USD'},
+        'author': {'@type': 'Person', 'name': 'NiceDayZc'},
+        'keywords': 'LINE bot Python without developer account, send LINE message Python without developer account, LINE personal account Python, LINE messenger personal account API Python, LINE QR code login Python, LINE login QR Python, LINE letter sealing Python, LINE E2EE Python, decrypt LINE messages Python, LINE Notify alternative Python, send LINE message to myself Python free, linepy alternative, carpedm20 LINE alternative, LINE unofficial API Python maintained, LINE Chrome extension API Python, LINE self bot Python, LINE MCP server, AI agent LINE messenger'
+      } | tojson }}</script>
+    {% endif %}
+
+  {% endif %}
+{% endblock %}

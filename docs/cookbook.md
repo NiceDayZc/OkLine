@@ -1,3 +1,8 @@
+---
+title: "LINE Automation Cookbook for Python — OkLine"
+description: "Copy-paste LINE automation recipes for Python — send photos, export contacts, auto-reply bots, decrypt chats, broadcast; each with a CLI and Python form."
+---
+
 # Cookbook
 
 [← docs home](./index.md)

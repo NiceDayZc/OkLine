@@ -1,3 +1,8 @@
+---
+title: "Send LINE Photos, Videos, Audio & Files from Python — OkLine"
+description: "Send photos, videos, audio and files to any LINE chat from Python — including end-to-end encrypted (Letter Sealing) sealed media upload and download."
+---
+
 # Sending media (images, video, audio, files)
 
 [← docs home](./index.md)

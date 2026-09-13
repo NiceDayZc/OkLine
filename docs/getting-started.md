@@ -1,3 +1,8 @@
+---
+title: "Send a LINE Message from Python Without a Developer Account — OkLine"
+description: "Install OkLine, log in with a QR code in your terminal, and send a LINE message from Python — no developer account, no bot channel, no webhook."
+---
+
 # Getting started
 
 [← docs home](./index.md)

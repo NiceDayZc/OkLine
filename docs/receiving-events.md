@@ -1,3 +1,8 @@
+---
+title: "Receive LINE Messages in Python Without a Webhook — OkLine"
+description: "Receive LINE messages in Python without a webhook, ngrok or public server — OkLine streams your personal account's operations over SSE and reconnects."
+---
+
 # Receiving events
 
 [← docs home](./index.md)
@@ -9,7 +14,7 @@
 
 Incoming activity — new messages, invitations, read receipts, reactions, and so
 on — arrives as a stream of **operations**. OkLine exposes it through `api.ops`
-([`okline/operations.py`](../okline/operations.py)) over the modern
+([`okline/operations.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/operations.py)) over the modern
 Server-Sent-Events (SSE) transport, with automatic reconnect.
 
 ## Iterate over operations
@@ -106,7 +111,7 @@ From `okline.enums.OpType`:
 | 130 | `NOTIFIED_ACCEPT_CHAT_INVITATION` | someone joined a chat |
 | 140 | `NOTIFIED_SEND_REACTION` | someone reacted to a message |
 
-The full list (~150 values) is in [`okline/enums.py`](../okline/enums.py).
+The full list (~150 values) is in [`okline/enums.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/enums.py).
 
 ## Disabling auto-reconnect
 

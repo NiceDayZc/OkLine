@@ -1,10 +1,15 @@
+---
+title: "Record & Debug LINE API Calls from Python — OkLine"
+description: "Every OkLine request and response is recorded — print HTTP transcripts, export JSON or HAR for browser DevTools, with secrets redacted by default."
+---
+
 # Recording & pasting responses
 
 [← docs home](./index.md)
 
 OkLine captures **every** request/response by default, so you can inspect or
 paste the full exchange for any endpoint. Implementation:
-[`okline/recorder.py`](../okline/recorder.py).
+[`okline/recorder.py`](https://github.com/NiceDayZc/OkLine/blob/main/okline/recorder.py).
 
 ## The basics
 

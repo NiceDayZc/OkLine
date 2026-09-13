@@ -1,0 +1,112 @@
+# OkLine documentation site — MkDocs (Material) served on GitHub Pages at
+# https://nicedayzc.github.io/OkLine/ (built locally, pushed to gh-pages).
+#
+# SEO notes (see /tmp/okline-seo-brief.md):
+# - Per-page <title>/description come from each page's front-matter; nav titles
+#   below are sidebar labels only (Material's <title> prefers front-matter).
+# - sitemap.xml is generated automatically by MkDocs 1.6's built-in
+#   sitemap.xml static template (no plugin needed).
+# - robots.txt lives in docs/robots.txt; JSON-LD/OG/hreflang live in
+#   overrides/main.html.
+
+site_name: OkLine
+site_url: https://nicedayzc.github.io/OkLine/
+site_description: >-
+  Automate your own LINE Messenger account from Python. QR-code login,
+  send/receive messages, decrypt E2EE Letter Sealing. No developer account,
+  no webhook, no 200-message cap. pip install okline.
+site_author: NiceDayZc
+repo_url: https://github.com/NiceDayZc/OkLine
+repo_name: NiceDayZc/OkLine
+copyright: >-
+  OkLine is unofficial and not affiliated with LINE Corporation. LINE is a
+  trademark of LINE Corporation.
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  favicon: favicon.svg
+  icon:
+    logo: material/chat
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.path
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+
+# Only the built-in search plugin is installed locally (no minify, no social
+# cards, no i18n) — do not add plugins that are not installed.
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/NiceDayZc/OkLine
+      name: OkLine on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/okline/
+      name: okline on PyPI
+
+nav:
+  - Home: index.md
+  - Getting started:
+    - Quickstart: getting-started.md
+    - Login & tokens: authentication.md
+  - Guides:
+    - QR code login: qr-login.md
+    - Sending messages: messaging.md
+    - Sending media: media.md
+    - Receiving events: receiving-events.md
+    - Bot framework: bots.md
+    - AI agents & MCP: ai-agent-mcp.md
+    - E2EE Letter Sealing: e2ee.md
+  - Use cases:
+    - LINE Notify replacement: line-notify-replacement.md
+    - Cookbook: cookbook.md
+  - Migrate:
+    - From linepy: migrate-from-linepy.md
+  - Reference:
+    - CLI: cli.md
+    - Endpoint reference: ENDPOINTS.md
+    - Architecture: architecture.md
+    - Recording: recording.md
+    - Troubleshooting: troubleshooting.md
+    - Contributing: contributing.md
+  - Compare:
+    - OkLine vs line-bot-sdk vs linepy: comparison.md
+  - FAQ: faq.md
+  - ไทย:
+    - หน้าแรก: th/index.md
+    - QR Login: th/qr-login.md
+    - LINE Notify ทางเลือก: th/line-notify.md
